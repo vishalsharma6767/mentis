@@ -1,16 +1,19 @@
-import { useRef, useState, useCallback } from 'react';
-import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
-import * as Speech from 'expo-speech';
+import { useState } from 'react';
+import { Platform } from 'react-native';
 import { api } from './api';
 
+const isWeb = Platform.OS === 'web';
+
+function noop() {}
+
 export function useVoice() {
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   async function startRecording() {
+    if (isWeb) return;
     try {
+      const { Audio } = await import('expo-av');
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) return;
       await Audio.setAudioModeAsync({
@@ -18,8 +21,9 @@ export function useVoice() {
         playsInSilentModeIOS: true,
       });
       const rec = new Audio.Recording();
+      const presets = Audio.RecordingOptionsPresets || { HIGH_QUALITY: {} };
       await rec.prepareToRecordAsync({
-        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        ...presets.HIGH_QUALITY,
         android: {
           extension: '.m4a',
           outputFormat: Audio.AndroidOutputFormat.MPEG_4,
@@ -41,21 +45,23 @@ export function useVoice() {
         },
       });
       await rec.startAsync();
-      setRecording(rec);
+      (window as any).__mentis_recording = rec;
       setIsRecording(true);
-    } catch { }
+    } catch {}
   }
 
   async function stopRecording(): Promise<string | null> {
-    if (!recording) return null;
+    if (isWeb) return null;
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
+      const { Audio } = await import('expo-av');
+      const rec: any = (window as any).__mentis_recording;
+      if (!rec) return null;
+      await rec.stopAndUnloadAsync();
+      const uri = rec.getURI();
+      (window as any).__mentis_recording = null;
       setIsRecording(false);
       return uri;
     } catch {
-      setRecording(null);
       setIsRecording(false);
       return null;
     }
@@ -71,17 +77,37 @@ export function useVoice() {
   }
 
   async function speakText(text: string) {
-    setIsSpeaking(true);
-    Speech.speak(text, {
-      language: 'en',
-      rate: 0.85,
-      onDone: () => setIsSpeaking(false),
-      onError: () => setIsSpeaking(false),
-    });
+    if (isWeb) {
+      if ('speechSynthesis' in window) {
+        setIsSpeaking(true);
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.85;
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = () => setIsSpeaking(false);
+        speechSynthesis.speak(utterance);
+      }
+      return;
+    }
+    try {
+      setIsSpeaking(true);
+      const mod = await import('expo-speech');
+      mod.speak(text, {
+        language: 'en',
+        rate: 0.85,
+        onDone: () => setIsSpeaking(false),
+        onError: () => setIsSpeaking(false),
+      });
+    } catch {
+      setIsSpeaking(false);
+    }
   }
 
   function stopSpeaking() {
-    Speech.stop();
+    if (isWeb && 'speechSynthesis' in window) {
+      speechSynthesis.cancel();
+    } else {
+      import('expo-speech').then((mod) => mod.stop()).catch(noop);
+    }
     setIsSpeaking(false);
   }
 
