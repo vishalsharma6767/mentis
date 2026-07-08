@@ -1,8 +1,7 @@
-import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 const DEV_URL = 'http://localhost:8000';
-const PROD_URL = Constants.expoConfig?.extra?.apiUrl ?? 'https://mentis-api.onrender.com';
+const PROD_URL = (process as any).env?.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'https://mentis-api-t9hk.onrender.com';
 
 export const BASE_URL = __DEV__ ? DEV_URL : PROD_URL;
 
