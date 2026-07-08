@@ -2,7 +2,16 @@
   "buildCommand": "cd mobile && npx expo export --platform web",
   "outputDirectory": "mobile/dist",
   "installCommand": "cd mobile && npm install",
+  "cleanUrls": true,
   "rewrites": [
+    {
+      "source": "/_expo/:path*",
+      "destination": "/_expo/:path*"
+    },
+    {
+      "source": "/assets/:path*",
+      "destination": "/assets/:path*"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"
