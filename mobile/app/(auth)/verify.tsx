@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing } from '../../src/theme';
@@ -10,15 +10,19 @@ export default function VerifyScreen() {
   const router = useRouter();
   const { userId, email } = useLocalSearchParams<{ userId: string; email: string }>();
   const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   async function handleVerify(code: string) {
     if (!userId) return;
+    setLoading(true);
     setError(false);
     try {
       await verifyOTP(userId, code);
       router.replace(`/(auth)/set-password?userId=${userId}`);
     } catch {
       setError(true);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -42,17 +46,20 @@ export default function VerifyScreen() {
       </TouchableOpacity>
 
       <View style={styles.content}>
-        <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
         <Text style={styles.title}>Verify your email</Text>
         <Text style={styles.subtitle}>
-          Enter the 6-digit code sent to <Text style={styles.email}>{email ?? 'your email'}</Text>.
+          Enter the 6-digit code sent to{'\n'}
+          <Text style={styles.email}>{email ?? 'your email'}</Text>
         </Text>
 
         <View style={styles.otpContainer}>
-          <OTPInput onComplete={handleVerify} onResend={handleResend} error={error} />
+          <OTPInput
+            onComplete={handleVerify}
+            onResend={handleResend}
+            error={error}
+            loading={loading}
+          />
         </View>
-
-        {error && <Text style={styles.error}>Invalid code. Try again or request a new one.</Text>}
       </View>
     </View>
   );
@@ -76,13 +83,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
   },
-  logo: { width: 88, height: 88, marginBottom: spacing.lg },
-  title: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
+  title: { fontSize: 32, fontWeight: '800', color: colors.text, marginBottom: spacing.sm },
   subtitle: {
     fontSize: 16,
     color: colors.textSecondary,
@@ -91,10 +92,4 @@ const styles = StyleSheet.create({
   },
   email: { color: colors.primary, fontWeight: '700' },
   otpContainer: { marginTop: spacing.lg },
-  error: {
-    color: colors.error,
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: spacing.md,
-  },
 });

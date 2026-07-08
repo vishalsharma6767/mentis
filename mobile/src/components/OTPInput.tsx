@@ -3,7 +3,9 @@ import {
   View,
   TextInput,
   StyleSheet,
-  Keyboard,
+  Platform,
+  Text,
+  TouchableOpacity,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -11,7 +13,6 @@ import Animated, {
   withSpring,
   withSequence,
   withTiming,
-  runOnJS,
 } from 'react-native-reanimated';
 import { colors, borderRadius, spacing } from '../theme';
 import { AnimatedButton } from './AnimatedButton';
@@ -22,30 +23,16 @@ interface OTPInputProps {
   onComplete: (code: string) => void;
   onResend: () => void;
   error?: boolean;
+  loading?: boolean;
 }
 
-function OTPBox({
-  index,
-  value,
-  focused,
-  error,
-}: {
-  index: number;
-  value: string;
-  focused: boolean;
-  error: boolean;
-}) {
+function OTPBox({ value, focused, error }: { value: string; focused: boolean; error: boolean }) {
   const scale = useSharedValue(1);
   const borderColor = useSharedValue(0);
 
   useEffect(() => {
-    if (focused) {
-      scale.value = withSpring(1.05);
-      borderColor.value = withTiming(1, { duration: 200 });
-    } else {
-      scale.value = withSpring(1);
-      borderColor.value = withTiming(0, { duration: 200 });
-    }
+    scale.value = withSpring(focused ? 1.05 : 1);
+    borderColor.value = withTiming(focused ? 1 : 0, { duration: 200 });
   }, [focused]);
 
   useEffect(() => {
@@ -74,40 +61,71 @@ function OTPBox({
         focused && styles.boxFocused,
       ]}
     >
-      <Animated.Text style={[styles.boxText, !!value && styles.boxTextFilled]}>
+      <Text style={[styles.boxText, !!value && styles.boxTextFilled]}>
         {value}
-      </Animated.Text>
+      </Text>
     </Animated.View>
   );
 }
 
-export function OTPInput({ onComplete, onResend, error }: OTPInputProps) {
+export function OTPInput({ onComplete, onResend, error, loading }: OTPInputProps) {
   const [code, setCode] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [focusedIndex, setFocusedIndex] = useState(0);
   const inputRef = useRef<TextInput>(null);
   const [shakeError, setShakeError] = useState(false);
+  const [timer, setTimer] = useState(30);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  function handleKeyPress(text: string) {
+  useEffect(() => {
+    if (timer > 0) {
+      timerRef.current = setInterval(() => setTimer((t) => t - 1), 1000);
+      return () => {
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+      };
+    }
+  }, []);
+
+  function startResendTimer() {
+    setTimer(30);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    timerRef.current = setInterval(() => setTimer((t) => t - 1), 1000);
+  }
+
+  function handleChangeText(text: string) {
     const digits = text.replace(/[^0-9]/g, '').split('');
-    const newCode = [...code];
+    const newCode = Array(OTP_LENGTH).fill('');
 
-    for (let i = 0; i < OTP_LENGTH; i++) {
-      newCode[i] = digits[i] ?? '';
+    for (let i = 0; i < Math.min(digits.length, OTP_LENGTH); i++) {
+      newCode[i] = digits[i];
     }
 
     setCode(newCode);
 
-    const filledCount = digits.length;
-    if (filledCount < OTP_LENGTH) {
-      setFocusedIndex(filledCount);
+    if (digits.length < OTP_LENGTH) {
+      setFocusedIndex(digits.length);
     } else {
       setFocusedIndex(OTP_LENGTH - 1);
-      const fullCode = newCode.join('');
-      if (fullCode.length === OTP_LENGTH) {
-        Keyboard.dismiss();
-        onComplete(fullCode);
-      }
     }
+  }
+
+  function handleSubmit() {
+    const fullCode = code.join('');
+    if (fullCode.length !== OTP_LENGTH || loading) return;
+    onComplete(fullCode);
+  }
+
+  function handleResendPress() {
+    setCode(Array(OTP_LENGTH).fill(''));
+    setFocusedIndex(0);
+    setShakeError(false);
+    startResendTimer();
+    onResend();
   }
 
   useEffect(() => {
@@ -115,39 +133,76 @@ export function OTPInput({ onComplete, onResend, error }: OTPInputProps) {
       setShakeError(true);
       setCode(Array(OTP_LENGTH).fill(''));
       setFocusedIndex(0);
-      const timer = setTimeout(() => setShakeError(false), 600);
-      return () => clearTimeout(timer);
+      const t = setTimeout(() => setShakeError(false), 600);
+      return () => clearTimeout(t);
     }
   }, [error]);
 
+  const isComplete = code.join('').length === OTP_LENGTH;
+
   return (
     <View style={styles.container}>
-      <View style={styles.boxes}>
-        {code.map((digit, index) => (
-          <OTPBox
-            key={index}
-            index={index}
-            value={digit}
-            focused={focusedIndex === index}
-            error={shakeError}
-          />
-        ))}
-      </View>
-      <TextInput
-        ref={inputRef}
-        style={styles.hiddenInput}
-        keyboardType="number-pad"
-        maxLength={OTP_LENGTH}
-        value={code.join('')}
-        onChangeText={handleKeyPress}
-        autoFocus
-      />
+      <TouchableOpacity activeOpacity={1} onPress={() => inputRef.current?.focus()} style={styles.boxesWrapper}>
+        <View style={styles.boxes}>
+          {code.map((digit, index) => (
+            <OTPBox
+              key={index}
+              value={digit}
+              focused={focusedIndex === index && !shakeError}
+              error={shakeError}
+            />
+          ))}
+        </View>
+      </TouchableOpacity>
+
+      {Platform.OS === 'web' ? (
+        <TextInput
+          ref={inputRef}
+          style={styles.webInput}
+          keyboardType="numeric"
+          inputMode="numeric"
+          maxLength={OTP_LENGTH}
+          value={code.join('')}
+          onChangeText={handleChangeText}
+          autoFocus
+          onKeyPress={({ nativeEvent }) => {
+            if (nativeEvent.key === 'Enter') handleSubmit();
+          }}
+        />
+      ) : (
+        <TextInput
+          ref={inputRef}
+          style={styles.hiddenInput}
+          keyboardType="number-pad"
+          maxLength={OTP_LENGTH}
+          value={code.join('')}
+          onChangeText={handleChangeText}
+          autoFocus
+        />
+      )}
+
       <AnimatedButton
-        title="Resend Code"
-        variant="ghost"
-        onPress={onResend}
-        style={styles.resendButton}
+        title="Verify Code"
+        onPress={handleSubmit}
+        disabled={!isComplete || loading}
+        loading={loading}
+        style={styles.submitButton}
       />
+
+      <View style={styles.resendRow}>
+        <Text style={styles.resendLabel}>Didn't receive the code? </Text>
+        <TouchableOpacity onPress={handleResendPress} disabled={timer > 0}>
+          <Text style={[styles.resendLink, timer > 0 && styles.resendDisabled]}>
+            {timer > 0 ? `Resend in ${timer}s` : 'Resend'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {error && (
+        <Text style={styles.errorText}>
+          Invalid code. Check your email and try again.
+        </Text>
+      )}
     </View>
   );
 }
@@ -156,6 +211,9 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     gap: spacing.lg,
+  },
+  boxesWrapper: {
+    width: '100%',
   },
   boxes: {
     flexDirection: 'row',
@@ -197,7 +255,35 @@ const styles = StyleSheet.create({
     height: 1,
     opacity: 0,
   },
-  resendButton: {
+  webInput: {
+    position: 'absolute',
+    width: '100%',
+    height: 1,
+    opacity: 0.01,
+  },
+  submitButton: {
+    width: '100%',
     marginTop: spacing.sm,
+  },
+  resendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  resendLabel: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  resendLink: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  resendDisabled: {
+    color: colors.textTertiary,
+  },
+  errorText: {
+    color: colors.error,
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
