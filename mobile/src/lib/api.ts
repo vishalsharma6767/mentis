@@ -187,6 +187,30 @@ export const api = {
     return res.json();
   },
 
+  async saveProfile(userId: string, data: { name: string; grade: string; subjects: string[]; goal: string }): Promise<void> {
+    const res = await fetch(`${BASE_URL}/api/auth/save-profile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, ...data }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to save profile' }));
+      throw new Error(err.detail);
+    }
+  },
+
+  async setPassword(userId: string, password: string): Promise<void> {
+    const res = await fetch(`${BASE_URL}/api/auth/set-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, password }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to set password' }));
+      throw new Error(err.detail);
+    }
+  },
+
   async getStats(userId: string): Promise<{
     totalSessions: number;
     completedSessions: number;

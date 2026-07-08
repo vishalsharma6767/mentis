@@ -28,7 +28,7 @@ export default function OnboardingScreen() {
     if (currentSlide < slides.length - 1) {
       setCurrentSlide(currentSlide + 1);
     } else {
-      router.replace('/(auth)/login');
+      setCurrentSlide(2);
     }
   }
 
@@ -49,18 +49,16 @@ export default function OnboardingScreen() {
           ))}
         </View>
 
-        <AnimatedButton
-          title={currentSlide < slides.length - 1 ? 'Next' : 'Get Started'}
-          onPress={goNext}
-          style={styles.button}
-        />
+        {currentSlide < slides.length - 1 ? (
+          <AnimatedButton title="Next" onPress={goNext} style={styles.button} />
+        ) : (
+          <>
+            <AnimatedButton title="Create Account" onPress={() => router.replace('/(auth)/register')} style={styles.button} />
+            <AnimatedButton title="I already have an account" variant="ghost" onPress={() => router.replace('/(auth)/login')} style={styles.skipButton} />
+          </>
+        )}
         {currentSlide < slides.length - 1 && (
-          <AnimatedButton
-            title="Skip"
-            variant="ghost"
-            onPress={() => router.replace('/(auth)/login')}
-            style={styles.skipButton}
-          />
+          <AnimatedButton title="Skip" variant="ghost" onPress={() => setCurrentSlide(2)} style={styles.skipButton} />
         )}
       </View>
     </View>

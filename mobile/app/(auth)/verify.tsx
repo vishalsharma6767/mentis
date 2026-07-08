@@ -16,7 +16,7 @@ export default function VerifyScreen() {
     setError(false);
     try {
       await verifyOTP(userId, code);
-      router.replace('/(tabs)');
+      router.replace(`/(auth)/set-password?userId=${userId}`);
     } catch {
       setError(true);
     }

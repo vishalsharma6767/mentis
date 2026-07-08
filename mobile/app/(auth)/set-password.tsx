@@ -8,37 +8,38 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius } from '../../src/theme';
 import { AnimatedButton, ParticleBackground } from '../../src/components';
-import { signIn } from '../../src/lib/auth';
+import { setPassword } from '../../src/lib/auth';
 
-export default function LoginScreen() {
+export default function SetPasswordScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const { userId } = useLocalSearchParams<{ userId: string }>();
+  const [password, setPasswordState] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  async function handleLogin() {
-    const normalized = email.trim().toLowerCase();
-    if (!normalized || !normalized.includes('@')) {
-      setError('Enter a valid email address.');
-      return;
-    }
+  async function handleSetPassword() {
     if (!password || password.length < 6) {
       setError('Password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirm) {
+      setError('Passwords do not match.');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      await signIn(normalized, password);
-      router.replace('/(tabs)');
+      await setPassword(userId!, password);
+      router.replace(`/(auth)/profile-setup?userId=${userId}`);
     } catch (e: any) {
-      setError(e?.message ?? 'Invalid email or password.');
+      setError(e?.message ?? 'Failed to set password.');
     } finally {
       setLoading(false);
     }
@@ -56,23 +57,8 @@ export default function LoginScreen() {
       </TouchableOpacity>
 
       <View style={styles.content}>
-        <Text style={styles.title}>Welcome back</Text>
-        <Text style={styles.subtitle}>Sign in to your Mentis account.</Text>
-
-        <View style={[styles.inputContainer, !!error && styles.inputError]}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor={colors.textTertiary}
-            value={email}
-            onChangeText={(v) => { setEmail(v); setError(''); }}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!loading}
-            returnKeyType="next"
-          />
-        </View>
+        <Text style={styles.title}>Set a password</Text>
+        <Text style={styles.subtitle}>Create a password to sign in quickly next time.</Text>
 
         <View style={[styles.inputContainer, !!error && styles.inputError]}>
           <TextInput
@@ -80,25 +66,43 @@ export default function LoginScreen() {
             placeholder="Password"
             placeholderTextColor={colors.textTertiary}
             value={password}
-            onChangeText={(v) => { setPassword(v); setError(''); }}
-            secureTextEntry={!showPassword}
+            onChangeText={(v) => { setPasswordState(v); setError(''); }}
+            secureTextEntry={!showPw}
+            autoCapitalize="none"
+            editable={!loading}
+          />
+          <TouchableOpacity onPress={() => setShowPw(!showPw)} style={styles.eyeButton}>
+            <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textTertiary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.inputContainer, !!error && styles.inputError]}>
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            placeholder="Confirm password"
+            placeholderTextColor={colors.textTertiary}
+            value={confirm}
+            onChangeText={(v) => { setConfirm(v); setError(''); }}
+            secureTextEntry={!showConfirm}
             autoCapitalize="none"
             editable={!loading}
             returnKeyType="go"
-            onSubmitEditing={handleLogin}
+            onSubmitEditing={handleSetPassword}
           />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>
-            <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textTertiary} />
+          <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)} style={styles.eyeButton}>
+            <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textTertiary} />
           </TouchableOpacity>
         </View>
 
         {!!error && <Text style={styles.error}>{error}</Text>}
 
-        <AnimatedButton title="Sign In" onPress={handleLogin} loading={loading} disabled={loading} style={styles.button} />
-
-        <TouchableOpacity style={styles.switchButton} onPress={() => router.replace('/(auth)/register')}>
-          <Text style={styles.switchText}>New here? <Text style={styles.switchLink}>Create an account</Text></Text>
-        </TouchableOpacity>
+        <AnimatedButton
+          title="Continue"
+          onPress={handleSetPassword}
+          loading={loading}
+          disabled={loading}
+          style={styles.button}
+        />
       </View>
     </KeyboardAvoidingView>
   );
@@ -125,7 +129,4 @@ const styles = StyleSheet.create({
   eyeButton: { padding: spacing.sm },
   error: { color: colors.error, fontSize: 14, marginBottom: spacing.md },
   button: { marginTop: spacing.md },
-  switchButton: { alignItems: 'center', marginTop: spacing.lg },
-  switchText: { color: colors.textSecondary, fontSize: 14 },
-  switchLink: { color: colors.primary, fontWeight: '700' },
 });
