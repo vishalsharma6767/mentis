@@ -1,3 +1,0 @@
-INFO:     127.0.0.1:57299 - "POST /api/tutor/doubt HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57300 - "POST /api/tutor/session-pdf HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57311 - "POST /api/tutor/session-pdf HTTP/1.1" 200 OK
