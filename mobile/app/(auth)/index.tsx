@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors, spacing, borderRadius } from '../../src/theme';
 import { AnimatedButton, ParticleBackground } from '../../src/components';
+import { restoreSession } from '../../src/lib/auth';
 
 const slides = [
   {
@@ -22,7 +23,23 @@ const slides = [
 export default function OnboardingScreen() {
   const router = useRouter();
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [checking, setChecking] = useState(true);
   const slide = slides[currentSlide];
+
+  useEffect(() => {
+    restoreSession().then((s) => {
+      if (s) router.replace('/(tabs)');
+      else setChecking(false);
+    });
+  }, []);
+
+  if (checking) {
+    return (
+      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   function goNext() {
     if (currentSlide < slides.length - 1) {
