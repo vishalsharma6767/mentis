@@ -9,18 +9,18 @@ import { sendOTP, verifyOTP } from '../../src/lib/auth';
 export default function VerifyScreen() {
   const router = useRouter();
   const { userId, email } = useLocalSearchParams<{ userId: string; email: string }>();
-  const [error, setError] = useState(false);
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function handleVerify(code: string) {
     if (!userId) return;
     setLoading(true);
-    setError(false);
+    setError('');
     try {
       await verifyOTP(userId, code);
       router.replace(`/(auth)/set-password?userId=${userId}`);
-    } catch {
-      setError(true);
+    } catch (e: any) {
+      setError(e?.message || e?.type || 'Invalid code. Try again.');
     } finally {
       setLoading(false);
     }
@@ -28,12 +28,12 @@ export default function VerifyScreen() {
 
   async function handleResend() {
     if (!email) return;
-    setError(false);
+    setError('');
     try {
       const newUserId = await sendOTP(email);
       router.replace(`/(auth)/verify?userId=${newUserId}&email=${encodeURIComponent(email)}`);
-    } catch {
-      setError(true);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to resend code.');
     }
   }
 
@@ -56,9 +56,10 @@ export default function VerifyScreen() {
           <OTPInput
             onComplete={handleVerify}
             onResend={handleResend}
-            error={error}
+            error={!!error}
             loading={loading}
           />
+          {!!error && <Text style={styles.error}>{error}</Text>}
         </View>
       </View>
     </View>
@@ -92,4 +93,10 @@ const styles = StyleSheet.create({
   },
   email: { color: colors.primary, fontWeight: '700' },
   otpContainer: { marginTop: spacing.lg },
+  error: {
+    color: colors.error,
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: spacing.md,
+  },
 });

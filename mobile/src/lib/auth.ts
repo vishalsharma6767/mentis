@@ -38,7 +38,13 @@ export async function sendOTP(email: string): Promise<string> {
 }
 
 export async function verifyOTP(userId: string, secret: string): Promise<UserSession> {
-  const session = await account.createSession(userId, secret);
+  let session;
+  try {
+    session = await account.createSession(userId, secret);
+  } catch (e: any) {
+    console.error('createSession failed, trying updateMagicURLSession:', e?.message);
+    session = await account.updateMagicURLSession(userId, secret);
+  }
   const user = await account.get();
   const userSession: UserSession = {
     userId: user.$id,
