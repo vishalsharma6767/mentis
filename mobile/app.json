@@ -42,6 +42,12 @@
         {
           "cameraPermission": "Mentis needs camera access to scan problems."
         }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Mentis needs motion access for AR tracking."
+        }
       ]
     ]
   }

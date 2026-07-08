@@ -2,11 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, tutor
+from app.routers import auth, tutor, streaming
 
 app = FastAPI(
     title='Mentis API',
-    version='0.2.0',
+    version='0.3.0',
     description='Backend for Mentis AI Live AR Tutor',
 )
 
@@ -20,11 +20,12 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(tutor.router)
+app.include_router(streaming.router)
 
 
 @app.get('/health')
 async def health():
     return {
         'status': 'ok',
-        'version': '0.2.0',
+        'version': '0.3.0',
     }

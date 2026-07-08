@@ -52,7 +52,7 @@ export default function ScanScreen() {
     try {
       const problem = await api.recognizeProblem(uri, selectedMode);
       router.push(
-        `/live-session?type=${encodeURIComponent(problem.type)}&mode=${encodeURIComponent(selectedMode)}&content=${encodeURIComponent(problem.content)}&title=${encodeURIComponent(problem.title)}&difficulty=${encodeURIComponent(problem.difficulty)}&imageUri=${encodeURIComponent(uri)}&arTargets=${encodeURIComponent(JSON.stringify(problem.arTargets ?? []))}`,
+        `/ar-tutor-realtime?type=${encodeURIComponent(problem.type)}&mode=${encodeURIComponent(selectedMode)}&content=${encodeURIComponent(problem.content)}&title=${encodeURIComponent(problem.title)}&difficulty=${encodeURIComponent(problem.difficulty)}&imageUri=${encodeURIComponent(uri)}&arTargets=${encodeURIComponent(JSON.stringify(problem.arTargets ?? []))}`,
       );
     } catch (e) {
       console.error('Capture error:', e);

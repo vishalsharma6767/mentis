@@ -9,9 +9,9 @@ import { api } from '../../src/lib/api';
 
 const quickActions = [
   { title: 'Live Tutor', icon: 'scan-outline', color: colors.primary, route: '/scan' },
-  { title: 'Homework', icon: 'document-text-outline', color: colors.accent, route: '/scan?mode=homework' },
-  { title: 'Book Mode', icon: 'library-outline', color: '#44FF88', route: '/scan?mode=book' },
-  { title: 'Coding Help', icon: 'code-slash-outline', color: colors.secondary, route: '/scan?mode=coding' },
+  { title: 'AR Realtime', icon: 'scan-outline', color: colors.accent, route: '/ar-tutor-realtime' },
+  { title: 'Homework', icon: 'document-text-outline', color: colors.secondary, route: '/scan?mode=homework' },
+  { title: 'Coding Help', icon: 'code-slash-outline', color: '#44FF88', route: '/scan?mode=coding' },
 ];
 
 export default function HomeScreen() {

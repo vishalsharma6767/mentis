@@ -13,6 +13,7 @@
     "expo-linking": "~57.0.2",
     "expo-router": "~57.0.4",
     "expo-secure-store": "~57.0.0",
+    "expo-sensors": "~57.0.0",
     "expo-speech": "^57.0.0",
     "expo-splash-screen": "~57.0.2",
     "expo-status-bar": "~57.0.0",
@@ -28,6 +29,7 @@
     "react-native-screens": "~4.25.2",
     "react-native-url-polyfill": "^2.0.0",
     "react-native-web": "^0.21.2",
+    "react-native-webview": "^14.0.1",
     "zod": "^3.23.0"
   },
   "devDependencies": {
