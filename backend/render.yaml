@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: mentis-api
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app.main:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    envVars:
+      - key: APPWRITE_ENDPOINT
+        value: https://sgp.cloud.appwrite.io/v1
+      - key: APPWRITE_PROJECT_ID
+        value: 6a4e2a05001fe75eb314
+      - key: APPWRITE_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        value: sqlite:///./mentis.db
