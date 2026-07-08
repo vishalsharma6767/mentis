@@ -32,7 +32,7 @@
     "extra": {
       "appwriteEndpoint": "https://sgp.cloud.appwrite.io/v1",
       "appwriteProjectId": "6a4e2a05001fe75eb314",
-      "apiUrl": "https://mentis-api.onrender.com"
+      "apiUrl": "https://mentis-api-t9hk.onrender.com"
     },
     "plugins": [
       "expo-router",
