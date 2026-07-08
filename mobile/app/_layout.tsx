@@ -35,6 +35,9 @@ export default function RootLayout() {
         ) : (
           <Stack.Screen name="(auth)" />
         )}
+        <Stack.Screen name="tutor" />
+        <Stack.Screen name="ar-tutor" />
+        <Stack.Screen name="live-session" />
       </Stack>
     </>
   );

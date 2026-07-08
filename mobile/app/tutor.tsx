@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,10 +18,11 @@ import Animated, {
   withSpring,
   withSequence,
 } from 'react-native-reanimated';
-import { colors, spacing, typography, borderRadius } from '../src/theme';
+import { colors, spacing, borderRadius } from '../src/theme';
 import { GlassCard, ParticleBackground } from '../src/components';
-import { api } from '../src/lib/api';
+import { api, LearnerLevel, LearningMode } from '../src/lib/api';
 import { useVoice } from '../src/lib/voice';
+import { restoreSession } from '../src/lib/auth';
 
 interface Step {
   number: number;
@@ -29,20 +30,25 @@ interface Step {
   explanation: string;
   hint: string;
   answer: string;
+  ar_annotation?: string;
+  focus?: string;
 }
 
 export default function TutorScreen() {
   const router = useRouter();
-  const { type, content, title, imageUri } = useLocalSearchParams<{
+  const { type, mode, content, title, imageUri, difficulty } = useLocalSearchParams<{
     type: string;
+    mode?: LearningMode;
     content: string;
     title: string;
     imageUri?: string;
+    difficulty?: string;
   }>();
 
   const [steps, setSteps] = useState<Step[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Step[]>([]);
+  const [level, setLevel] = useState<LearnerLevel>('intermediate');
   const [loading, setLoading] = useState(true);
   const [showHint, setShowHint] = useState(false);
   const [showAnswer, setShowAnswer] = useState(false);
@@ -51,16 +57,27 @@ export default function TutorScreen() {
   const [showHelp, setShowHelp] = useState(false);
   const [askingHelp, setAskingHelp] = useState(false);
   const [transcribingVoice, setTranscribingVoice] = useState(false);
+  const [keyConcept, setKeyConcept] = useState('');
+  const [confidenceCheck, setConfidenceCheck] = useState('');
+  const [recommendedPractice, setRecommendedPractice] = useState<string[]>([]);
+  const [completed, setCompleted] = useState(false);
 
   const voice = useVoice();
   const stepScale = useSharedValue(1);
+  const selectedMode = (mode ?? 'math') as LearningMode;
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const lesson = await api.generateLesson(type ?? 'unknown', content ?? '');
-        setSteps(lesson.steps);
+        const lesson = await api.generateLesson(type ?? 'unknown', content ?? '', level, selectedMode);
+        setSteps(lesson.steps ?? []);
+        setCurrentStep(0);
+        setCompletedSteps([]);
+        setKeyConcept(lesson.key_concept ?? '');
+        setConfidenceCheck(lesson.confidence_check ?? '');
+        setRecommendedPractice(lesson.recommended_practice ?? []);
+        setCompleted(false);
       } catch (e) {
         console.error('Failed to load lesson:', e);
       } finally {
@@ -68,7 +85,7 @@ export default function TutorScreen() {
       }
     }
     load();
-  }, []);
+  }, [level]);
 
   function animateStep() {
     stepScale.value = withSequence(
@@ -77,18 +94,36 @@ export default function TutorScreen() {
     );
   }
 
-  function handleNext() {
+  async function handleNext() {
+    const nextCompleted = [...completedSteps, steps[currentStep]].filter(Boolean);
     setShowHint(false);
     setShowAnswer(false);
     setUserInput('');
     setHelpText('');
     setShowHelp(false);
-    completedSteps.push(steps[currentStep]);
-    setCompletedSteps([...completedSteps]);
+    setCompletedSteps(nextCompleted);
 
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1);
       animateStep();
+      return;
+    }
+
+    setCompleted(true);
+    try {
+      const session = await restoreSession();
+      if (session) {
+        await api.saveSession({
+          userId: session.userId,
+          problemTitle: title ?? content ?? 'Tutoring session',
+          problemType: selectedMode,
+          extractedText: content ?? '',
+          status: 'completed',
+          steps: JSON.stringify(nextCompleted),
+        });
+      }
+    } catch {
+      // Session persistence should never block the learning flow.
     }
   }
 
@@ -154,6 +189,7 @@ export default function TutorScreen() {
   }
 
   const step = steps[currentStep];
+  const progress = steps.length ? Math.min(100, (completedSteps.length / steps.length) * 100) : 0;
 
   return (
     <KeyboardAvoidingView
@@ -170,7 +206,7 @@ export default function TutorScreen() {
           <View
             style={[
               styles.progressBar,
-              { width: `${((completedSteps.length + (showAnswer ? 1 : 0)) / steps.length) * 100}%` },
+              { width: `${progress}%` },
             ]}
           />
         </View>
@@ -185,21 +221,55 @@ export default function TutorScreen() {
         showsVerticalScrollIndicator={false}
       >
         <GlassCard style={styles.problemCard}>
-          <Text style={styles.problemLabel}>Problem</Text>
+          <View style={styles.problemMetaRow}>
+            <Text style={styles.problemLabel}>{selectedMode} tutor</Text>
+            {!!difficulty && <Text style={styles.difficulty}>{difficulty}</Text>}
+          </View>
           <Text style={styles.problemText}>{title ?? content}</Text>
+          {!!keyConcept && <Text style={styles.conceptText}>Concept: {keyConcept}</Text>}
         </GlassCard>
 
+        <View style={styles.levelRow}>
+          {(['beginner', 'intermediate', 'advanced'] as LearnerLevel[]).map((item) => (
+            <TouchableOpacity
+              key={item}
+              style={[styles.levelButton, level === item && styles.levelButtonActive]}
+              onPress={() => setLevel(item)}
+            >
+              <Text style={[styles.levelText, level === item && styles.levelTextActive]}>{item}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {!completed ? (
         <Animated.View style={[styles.stepCard, stepAnimStyle]}>
           <View style={styles.stepHeader}>
             <View style={styles.stepBadge}>
               <Text style={styles.stepBadgeText}>Step {step?.number}</Text>
             </View>
+            {!!step?.focus && (
+              <View style={styles.focusBadge}>
+                <Ionicons name="locate-outline" size={13} color={colors.secondary} />
+                <Text style={styles.focusText}>{step.focus}</Text>
+              </View>
+            )}
           </View>
 
           <Text style={styles.stepInstruction}>{step?.instruction}</Text>
 
           {step?.explanation && (
             <Text style={styles.stepExplanation}>{step?.explanation}</Text>
+          )}
+
+          {!!step?.ar_annotation && (
+            <TouchableOpacity
+              style={styles.arPrompt}
+              onPress={() => router.push(`/ar-tutor?imageUri=${encodeURIComponent(imageUri ?? '')}&type=${encodeURIComponent(type ?? '')}&mode=${encodeURIComponent(selectedMode)}&content=${encodeURIComponent(content ?? '')}&title=${encodeURIComponent(title ?? '')}&step=${currentStep}`)}
+            >
+              <Ionicons name="scan-outline" size={18} color={colors.primary} />
+              <Text style={styles.arPromptText}>{step.ar_annotation}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+            </TouchableOpacity>
           )}
 
           <View style={styles.inputArea}>
@@ -304,27 +374,40 @@ export default function TutorScreen() {
             </GlassCard>
           )}
         </Animated.View>
+        ) : (
+          <GlassCard style={styles.completeCard}>
+            <Ionicons name="checkmark-circle" size={42} color={colors.success} />
+            <Text style={styles.completeTitle}>Lesson complete</Text>
+            {!!confidenceCheck && <Text style={styles.completeText}>{confidenceCheck}</Text>}
+            {recommendedPractice.map((item, index) => (
+              <Text key={index} style={styles.practiceText}>- {item}</Text>
+            ))}
+          </GlassCard>
+        )}
       </ScrollView>
 
       <View style={styles.footer}>
         <View style={styles.footerRow}>
           <TouchableOpacity
             style={[styles.arButton]}
-            onPress={() => router.push(`/ar-tutor?imageUri=${encodeURIComponent(imageUri ?? '')}&type=${encodeURIComponent(type ?? '')}&content=${encodeURIComponent(content ?? '')}&title=${encodeURIComponent(title ?? '')}`)}
+            onPress={() => router.push(`/live-session?imageUri=${encodeURIComponent(imageUri ?? '')}&type=${encodeURIComponent(type ?? '')}&mode=${encodeURIComponent(selectedMode)}&content=${encodeURIComponent(content ?? '')}&title=${encodeURIComponent(title ?? '')}&difficulty=${encodeURIComponent(difficulty ?? '')}`)}
           >
-            <Ionicons name="scan-outline" size={18} color={colors.primary} />
-            <Text style={styles.arButtonText}>AR View</Text>
+            <Ionicons name="school-outline" size={18} color={colors.primary} />
+            <Text style={styles.arButtonText}>Live Tutor</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.nextButton}
             onPress={handleNext}
+            disabled={completed || !step}
           >
             <Text style={styles.nextButtonText}>
-              {currentStep < steps.length - 1
+              {completed
+                ? 'Completed'
+                : currentStep < steps.length - 1
                 ? 'Next Step'
                 : 'Complete Lesson'}
             </Text>
-            <Ionicons name="arrow-forward" size={20} color={colors.bg} />
+            <Ionicons name={completed ? 'checkmark' : 'arrow-forward'} size={20} color={colors.bg} />
           </TouchableOpacity>
         </View>
       </View>
@@ -388,18 +471,61 @@ const styles = StyleSheet.create({
   problemCard: {
     padding: spacing.md,
   },
+  problemMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
   problemLabel: {
     fontSize: 12,
     fontWeight: '600',
     color: colors.primary,
     textTransform: 'uppercase',
     letterSpacing: 1,
-    marginBottom: spacing.xs,
+  },
+  difficulty: {
+    color: colors.warning,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
   problemText: {
     fontSize: 16,
     color: colors.text,
     lineHeight: 24,
+  },
+  conceptText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginTop: spacing.sm,
+  },
+  levelRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  levelButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgSecondary,
+  },
+  levelButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  levelText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  levelTextActive: {
+    color: colors.bg,
   },
   stepCard: {
     backgroundColor: colors.surface,
@@ -409,6 +535,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   stepHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
     marginBottom: spacing.md,
   },
   stepBadge: {
@@ -423,6 +553,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.primary,
   },
+  focusBadge: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+  focusText: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    textAlign: 'right',
+  },
   stepInstruction: {
     fontSize: 18,
     fontWeight: '600',
@@ -435,6 +577,23 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 22,
     marginBottom: spacing.md,
+  },
+  arPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+    backgroundColor: colors.primary + '10',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  arPromptText: {
+    flex: 1,
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
   },
   inputArea: {
     marginBottom: spacing.md,
@@ -457,6 +616,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   actionButton: {
@@ -565,5 +725,28 @@ const styles = StyleSheet.create({
   voiceButtonActive: {
     backgroundColor: colors.accent + '20',
     borderColor: colors.accent,
+  },
+  completeCard: {
+    padding: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  completeTitle: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  completeText: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  practiceText: {
+    alignSelf: 'stretch',
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 21,
   },
 });

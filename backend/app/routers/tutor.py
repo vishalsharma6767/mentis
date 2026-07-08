@@ -1,4 +1,5 @@
 import json
+import base64
 from io import BytesIO
 from datetime import datetime, timezone
 
@@ -14,9 +15,9 @@ PROGRESS_COLLECTION = 'progress'
 
 
 @router.post('/recognize')
-async def recognize_problem(file: UploadFile = File(...)):
+async def recognize_problem(file: UploadFile = File(...), mode: str = Form('math')):
     image_bytes = await file.read()
-    problem = vision_service.extract_problem(image_bytes)
+    problem = vision_service.extract_problem(image_bytes, mode)
     return problem
 
 
@@ -25,9 +26,10 @@ async def generate_lesson(
     problem_type: str = Form(...),
     content: str = Form(...),
     level: str = Form('intermediate'),
+    mode: str = Form('math'),
 ):
     problem = {'type': problem_type, 'content': content}
-    lesson = tutor_service.generate_lesson(problem, level)
+    lesson = tutor_service.generate_lesson(problem, level, mode)
     return lesson
 
 
@@ -43,6 +45,38 @@ async def step_help(
     current_dict = json.loads(current)
     help_text = tutor_service.get_step_help(problem, completed_list, current_dict)
     return {'help': help_text}
+
+
+@router.post('/doubt')
+async def answer_doubt(
+    content: str = Form(...),
+    question: str = Form(...),
+    current: str = Form('{}'),
+    level: str = Form('intermediate'),
+    mode: str = Form('math'),
+):
+    try:
+        current_dict = json.loads(current)
+    except json.JSONDecodeError:
+        current_dict = {}
+    return tutor_service.answer_doubt(content, question, current_dict, level, mode)
+
+
+@router.post('/session-pdf')
+async def session_pdf(
+    title: str = Form('Mentis Tutor Session'),
+    problem: str = Form(''),
+    steps: str = Form('[]'),
+    transcript: str = Form('[]'),
+    pen_notes: str = Form('[]'),
+):
+    pdf_bytes = _build_session_pdf(title, problem, steps, transcript, pen_notes)
+    safe_title = ''.join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip() or 'mentis-session'
+    return {
+        'filename': f'{safe_title[:48].replace(" ", "-").lower()}-solution.pdf',
+        'mime': 'application/pdf',
+        'base64': base64.b64encode(pdf_bytes).decode('ascii'),
+    }
 
 
 @router.post('/transcribe')
@@ -63,6 +97,134 @@ async def transcribe_audio(file: UploadFile = File(...)):
         response_format='text',
     )
     return {'text': transcription}
+
+
+def _pdf_escape(text: str) -> str:
+    return text.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
+
+
+def _wrap(text: str, limit: int = 88) -> list[str]:
+    words = str(text or '').replace('\r', '').split()
+    lines: list[str] = []
+    current = ''
+    for word in words:
+        if len(current) + len(word) + 1 > limit:
+            if current:
+                lines.append(current)
+            current = word
+        else:
+            current = f'{current} {word}'.strip()
+    if current:
+        lines.append(current)
+    return lines or ['']
+
+
+def _read_json_list(value: str) -> list:
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, list) else []
+    except json.JSONDecodeError:
+        return []
+
+
+def _build_session_pdf(title: str, problem: str, steps_json: str, transcript_json: str, pen_json: str) -> bytes:
+    steps = _read_json_list(steps_json)
+    transcript = _read_json_list(transcript_json)
+    pen_notes = _read_json_list(pen_json)
+
+    lines = [
+        'Mentis AI Live AR Tutor',
+        f'Session: {title}',
+        f'Date: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}',
+        '',
+        'Scanned Problem',
+    ]
+    lines.extend(_wrap(problem, 92))
+    lines.extend(['', 'Step-by-step Solution'])
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        lines.extend(_wrap(f"Step {step.get('number', '')}: {step.get('instruction', '')}", 92))
+        if step.get('explanation'):
+            lines.extend(_wrap(f"Why: {step.get('explanation')}", 92))
+        if step.get('answer'):
+            lines.extend(_wrap(f"Result: {step.get('answer')}", 92))
+        if step.get('ar_annotation'):
+            lines.extend(_wrap(f"AR pen: {step.get('ar_annotation')}", 92))
+        lines.append('')
+
+    if pen_notes:
+        lines.append('AR Pen Notes')
+        for note in pen_notes:
+            text = note.get('text') if isinstance(note, dict) else str(note)
+            lines.extend(_wrap(f'- {text}', 92))
+        lines.append('')
+
+    if transcript:
+        lines.append('Live Doubt Transcript')
+        for msg in transcript:
+            if isinstance(msg, dict):
+                speaker = msg.get('role', 'message').title()
+                text = msg.get('text', '')
+                lines.extend(_wrap(f'{speaker}: {text}', 92))
+
+    page_streams: list[str] = []
+    y = 760
+    content = ['BT', '/F1 11 Tf', '50 760 Td', '14 TL']
+
+    def flush_page():
+        nonlocal content, y
+        content.append('ET')
+        page_streams.append('\n'.join(content))
+        y = 760
+        content = ['BT', '/F1 11 Tf', '50 760 Td', '14 TL']
+
+    for raw_line in lines:
+        for line in _wrap(raw_line, 96):
+            if y < 48:
+                flush_page()
+            escaped = _pdf_escape(line)
+            content.append(f'({escaped}) Tj')
+            content.append('T*')
+            y -= 14
+    flush_page()
+
+    objects: list[str] = [
+        '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+        '',
+        '3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    ]
+    page_ids: list[int] = []
+    next_obj = 4
+    for stream in page_streams:
+        content_obj = next_obj
+        page_obj = next_obj + 1
+        next_obj += 2
+        stream_bytes = stream.encode('latin-1', 'replace')
+        objects.append(
+            f'{content_obj} 0 obj\n<< /Length {len(stream_bytes)} >>\nstream\n{stream}\nendstream\nendobj\n'
+        )
+        objects.append(
+            f'{page_obj} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] '
+            f'/Resources << /Font << /F1 3 0 R >> >> /Contents {content_obj} 0 R >>\nendobj\n'
+        )
+        page_ids.append(page_obj)
+
+    kids = ' '.join(f'{page} 0 R' for page in page_ids)
+    objects[1] = f'2 0 obj\n<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>\nendobj\n'
+
+    pdf = ['%PDF-1.4\n']
+    offsets = [0] * (next_obj)
+    for obj in objects:
+        obj_id = int(obj.split(' ', 1)[0])
+        offsets[obj_id] = sum(len(part.encode('latin-1', 'replace')) for part in pdf)
+        pdf.append(obj)
+    xref_offset = sum(len(part.encode('latin-1', 'replace')) for part in pdf)
+    pdf.append(f'xref\n0 {next_obj}\n0000000000 65535 f \n')
+    for offset in offsets[1:]:
+        pdf.append(f'{offset:010d} 00000 n \n')
+    pdf.append(f'trailer\n<< /Size {next_obj} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF')
+    return ''.join(pdf).encode('latin-1', 'replace')
 
 
 @router.post('/sessions')

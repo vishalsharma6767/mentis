@@ -1,0 +1,169 @@
+
+> mobile@1.0.0 start
+> expo start --web --port 8081
+
+env: load .env
+env: export EXPO_PUBLIC_APPWRITE_ENDPOINT EXPO_PUBLIC_APPWRITE_PROJECT_ID
+Starting project at C:\Users\LENOVO\Desktop\python programming\AI Teacher\mentis\mobile
+Expo Autolinking module resolution enabled
+Starting Metro Bundler
+
+Waiting on http://localhost:8081
+
+1 package may need updating. Run npx expo install --check for details.
+Logs for your project will appear below.
+| (node:18360) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:18360) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:18360) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:18360) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:18360) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:18360) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+Web Bundled 22228ms mobile\node_modules\expo-router\entry.js (1 module)
+Web Bundled 16877ms mobile\node_modules\expo-router\entry.js (1 module)
+Web Bundled 10500ms mobile\node_modules\expo-router\entry.js (1 module)
+Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+Web  LOG  Running application "main" with appParams:
+ {"hydrate": undefined, "rootTag": "#root"} 
+Development-level warnings: ON.
+Performance optimizations: OFF.
+Web  WARN  "shadow*" style props are deprecated. Use "boxShadow".
+Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+Web  LOG  Running application "main" with appParams:
+ {"hydrate": undefined, "rootTag": "#root"} 
+Development-level warnings: ON.
+Performance optimizations: OFF.
+Web  WARN  "shadow*" style props are deprecated. Use "boxShadow".
+Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+Web  WARN  Appwrite is using localStorage for session management. Increase your security by adding a custom domain as your API endpoint.
+Web  ERROR  The action 'GO_BACK' was not handled by any navigator.
+
+Is there any screen to go back to?
+
+This is a development-only warning and won't be shown in production. 
+
+Code: setupHMR.ts
+[0m [90m 79 |[39m [36mfunction[39m captureCurrentStack() {
+ [90m 80 |[39m   [90m// If you're reading this, look deeper into the call stack to find the actual error source.[39m
+[31m[1m>[22m[39m[90m 81 |[39m   [36mreturn[39m [36mnew[39m [33mNamelessError[39m()[33m.[39mstack[33m;[39m
+ [90m    |[39m          [31m[1m^[22m[39m
+ [90m 82 |[39m }
+ [90m 83 |[39m[0m
+Call Stack
+  captureCurrentStack (node_modules\expo\src\async-require\setupHMR.ts:81:10)
+  addErrorStacks (node_modules\expo\src\async-require\setupHMR.ts:59:19)
+  console.level (node_modules\expo\src\async-require\setupHMR.ts:22:48)
+  consoleErrorMiddleware (node_modules\@expo\log-box\src\LogBox.ts:101:23)
+  console.error (node_modules\@expo\log-box\src\LogBox.ts:33:25)
+  onUnhandledAction (mobile\node_modules\expo-router\build\ExpoRoot.js:183:17)
+  <anonymous> (mobile\node_modules\expo-router\build\react-navigation\core\useNavigationBuilder.js:611:32)
+  latestCallback (mobile\node_modules\expo-router\build\utils\useLatestCallback.js:52:28)
+  dispatch (mobile\node_modules\expo-router\build\react-navigation\core\useNavigationHelpers.js:57:34)
+  listeners.focus._$argument_0 (mobile\node_modules\expo-router\build\react-navigation\core\BaseNavigationContainer.js:120:59)
+  listener (mobile\node_modules\expo-router\build\react-navigation\core\useFocusedListenersChildrenAdapter.js:54:45)
+  listener (mobile\node_modules\expo-router\build\react-navigation\core\useFocusedListenersChildrenAdapter.js:49:45)
+  listener (mobile\node_modules\expo-router\build\react-navigation\core\useFocusedListenersChildrenAdapter.js:49:45)
+  <anonymous> (mobile\node_modules\expo-router\build\react-navigation\core\BaseNavigationContainer.js:120:31)
+  latestCallback (mobile\node_modules\expo-router\build\utils\useLatestCallback.js:52:28)
+  exports.routingQueue.run (mobile\node_modules\expo-router\build\global-state\routingQueue.js:40:33)
+  <anonymous> (mobile\node_modules\expo-router\build\imperative-api.js:12:32)
+  callCreate.react_stack_bottom_frame (node_modules\react-dom\cjs\react-dom-client.development.js:25989:20)
+  runWithFiberInDEV (node_modules\react-dom\cjs\react-dom-client.development.js:871:30)
+  commitHookEffectListMount (node_modules\react-dom\cjs\react-dom-client.development.js:13249:29)
+  commitHookPassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:13336:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15484:13)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15718:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15476:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15476:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15718:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15504:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15476:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11) 
+
+Code: ExpoRoot.js
+[0m [90m 133 |[39m         }
+ [90m 134 |[39m     }
+[31m[1m>[22m[39m[90m 135 |[39m     [36mreturn[39m (([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)(storeContext_1[33m.[39m[33mStoreContext[39m[33m.[39m[33mProvider[39m[33m,[39m { value[33m:[39m store[33m,[39m children[33m:[39m ([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)([33mNavigationContainer_1[39m[33m.[39m[33mNavigationContainer[39m[33m,[39m { ref[33m:[39m store[33m.[39mnavigationRef[33m,[39m initialState[33m:[39m store[33m.[39mstate[33m,[39m linking[33m:[39m store[33m.[39mlinking[33m,[39m onUnhandledAction[33m:[39m onUnhandledAction[33m,[39m onStateChange[33m:[39m store[33m.[39monStateChange[33m,[39m documentTitle[33m:[39m documentTitle[33m,[39m onReady[33m:[39m onNavigationReady[33m,[39m children[33m:[39m ([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)(serverLocationContext_1[33m.[39m[33mServerContext[39m[33m.[39m[33mProvider[39m[33m,[39m { value[33m:[39m serverContext[33m,[39m children[33m:[39m ([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)([33mWrapperComponent[39m[33m,[39m { children[33m:[39m ([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)([33mContent[39m[33m,[39m {}) }) }) }) }))[33m;[39m
+ [90m     |[39m                                                                                                                         [31m[1m^[22m[39m
+ [90m 136 |[39m }
+ [90m 137 |[39m [36mfunction[39m [33mContent[39m() {
+ [90m 138 |[39m     [36mconst[39m children [33m=[39m [([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)(primitives_1[33m.[39m[33mScreen[39m[33m,[39m { name[33m:[39m constants_1[33m.[39m[33mINTERNAL_SLOT_NAME[39m[33m,[39m component[33m:[39m router_store_1[33m.[39mstore[33m.[39mrootComponent })][33m;[39m[0m
+Call Stack
+  ContextNavigator (mobile\node_modules\expo-router\build\ExpoRoot.js:135:121)
+  ExpoRoot (mobile\node_modules\expo-router\build\ExpoRoot.js:85:33)
+  App (mobile\node_modules\expo-router\build\qualified-entry.js:20:91)
+  WithDevTools (node_modules\expo\src\launch\withDevTools.web.tsx:11:9)
+Web  ERROR  The action 'GO_BACK' was not handled by any navigator.
+
+Is there any screen to go back to?
+
+This is a development-only warning and won't be shown in production. 
+
+Code: setupHMR.ts
+[0m [90m 79 |[39m [36mfunction[39m captureCurrentStack() {
+ [90m 80 |[39m   [90m// If you're reading this, look deeper into the call stack to find the actual error source.[39m
+[31m[1m>[22m[39m[90m 81 |[39m   [36mreturn[39m [36mnew[39m [33mNamelessError[39m()[33m.[39mstack[33m;[39m
+ [90m    |[39m          [31m[1m^[22m[39m
+ [90m 82 |[39m }
+ [90m 83 |[39m[0m
+Call Stack
+  captureCurrentStack (node_modules\expo\src\async-require\setupHMR.ts:81:10)
+  addErrorStacks (node_modules\expo\src\async-require\setupHMR.ts:59:19)
+  console.level (node_modules\expo\src\async-require\setupHMR.ts:22:48)
+  consoleErrorMiddleware (node_modules\@expo\log-box\src\LogBox.ts:101:23)
+  console.error (node_modules\@expo\log-box\src\LogBox.ts:33:25)
+  onUnhandledAction (mobile\node_modules\expo-router\build\ExpoRoot.js:183:17)
+  <anonymous> (mobile\node_modules\expo-router\build\react-navigation\core\useNavigationBuilder.js:611:32)
+  latestCallback (mobile\node_modules\expo-router\build\utils\useLatestCallback.js:52:28)
+  dispatch (mobile\node_modules\expo-router\build\react-navigation\core\useNavigationHelpers.js:57:34)
+  listeners.focus._$argument_0 (mobile\node_modules\expo-router\build\react-navigation\core\BaseNavigationContainer.js:120:59)
+  listener (mobile\node_modules\expo-router\build\react-navigation\core\useFocusedListenersChildrenAdapter.js:54:45)
+  listener (mobile\node_modules\expo-router\build\react-navigation\core\useFocusedListenersChildrenAdapter.js:49:45)
+  listener (mobile\node_modules\expo-router\build\react-navigation\core\useFocusedListenersChildrenAdapter.js:49:45)
+  <anonymous> (mobile\node_modules\expo-router\build\react-navigation\core\BaseNavigationContainer.js:120:31)
+  latestCallback (mobile\node_modules\expo-router\build\utils\useLatestCallback.js:52:28)
+  exports.routingQueue.run (mobile\node_modules\expo-router\build\global-state\routingQueue.js:40:33)
+  <anonymous> (mobile\node_modules\expo-router\build\imperative-api.js:12:32)
+  callCreate.react_stack_bottom_frame (node_modules\react-dom\cjs\react-dom-client.development.js:25989:20)
+  runWithFiberInDEV (node_modules\react-dom\cjs\react-dom-client.development.js:871:30)
+  commitHookEffectListMount (node_modules\react-dom\cjs\react-dom-client.development.js:13249:29)
+  commitHookPassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:13336:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15484:13)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15718:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15476:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15476:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15718:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15504:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+  commitPassiveMountOnFiber (node_modules\react-dom\cjs\react-dom-client.development.js:15476:11)
+  recursivelyTraversePassiveMountEffects (node_modules\react-dom\cjs\react-dom-client.development.js:15439:11) 
+
+Code: ExpoRoot.js
+[0m [90m 133 |[39m         }
+ [90m 134 |[39m     }
+[31m[1m>[22m[39m[90m 135 |[39m     [36mreturn[39m (([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)(storeContext_1[33m.[39m[33mStoreContext[39m[33m.[39m[33mProvider[39m[33m,[39m { value[33m:[39m store[33m,[39m children[33m:[39m ([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)([33mNavigationContainer_1[39m[33m.[39m[33mNavigationContainer[39m[33m,[39m { ref[33m:[39m store[33m.[39mnavigationRef[33m,[39m initialState[33m:[39m store[33m.[39mstate[33m,[39m linking[33m:[39m store[33m.[39mlinking[33m,[39m onUnhandledAction[33m:[39m onUnhandledAction[33m,[39m onStateChange[33m:[39m store[33m.[39monStateChange[33m,[39m documentTitle[33m:[39m documentTitle[33m,[39m onReady[33m:[39m onNavigationReady[33m,[39m children[33m:[39m ([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)(serverLocationContext_1[33m.[39m[33mServerContext[39m[33m.[39m[33mProvider[39m[33m,[39m { value[33m:[39m serverContext[33m,[39m children[33m:[39m ([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)([33mWrapperComponent[39m[33m,[39m { children[33m:[39m ([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)([33mContent[39m[33m,[39m {}) }) }) }) }))[33m;[39m
+ [90m     |[39m                                                                                                                         [31m[1m^[22m[39m
+ [90m 136 |[39m }
+ [90m 137 |[39m [36mfunction[39m [33mContent[39m() {
+ [90m 138 |[39m     [36mconst[39m children [33m=[39m [([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)(primitives_1[33m.[39m[33mScreen[39m[33m,[39m { name[33m:[39m constants_1[33m.[39m[33mINTERNAL_SLOT_NAME[39m[33m,[39m component[33m:[39m router_store_1[33m.[39mstore[33m.[39mrootComponent })][33m;[39m[0m
+Call Stack
+  ContextNavigator (mobile\node_modules\expo-router\build\ExpoRoot.js:135:121)
+  ExpoRoot (mobile\node_modules\expo-router\build\ExpoRoot.js:85:33)
+  App (mobile\node_modules\expo-router\build\qualified-entry.js:20:91)
+  WithDevTools (node_modules\expo\src\launch\withDevTools.web.tsx:11:9)

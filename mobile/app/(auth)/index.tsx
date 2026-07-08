@@ -1,79 +1,51 @@
-import { useState, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { useState } from 'react';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  withSequence,
-  runOnJS,
-} from 'react-native-reanimated';
-import { colors, spacing, typography, borderRadius } from '../../src/theme';
+import { colors, spacing, borderRadius } from '../../src/theme';
 import { AnimatedButton, ParticleBackground } from '../../src/components';
-
-const { width } = Dimensions.get('window');
 
 const slides = [
   {
     title: 'Point & Learn',
-    subtitle: 'Point your camera at any problem. Mentis recognizes it instantly.',
-    emoji: '📷',
+    subtitle: 'Scan a notebook, worksheet, diagram, textbook, or code error.',
   },
   {
-    title: 'Step by Step',
-    subtitle: 'An AI teacher guides you through every step. Never get stuck again.',
-    emoji: '🧠',
+    title: 'Live AR Teacher',
+    subtitle: 'Mentis talks with you, writes on the page, and waits for your doubts.',
   },
   {
-    title: 'Your Pace',
-    subtitle: 'Personalized tutoring that adapts to your level and learning style.',
-    emoji: '🎯',
+    title: 'Session PDF',
+    subtitle: 'Download solved steps, AR pen notes, and the doubt transcript after class.',
   },
 ];
 
 export default function OnboardingScreen() {
   const router = useRouter();
   const [currentSlide, setCurrentSlide] = useState(0);
-  const slideProgress = useSharedValue(0);
+  const slide = slides[currentSlide];
 
   function goNext() {
     if (currentSlide < slides.length - 1) {
-      slideProgress.value = withSequence(
-        withTiming(0, { duration: 150 }),
-        withTiming(1, { duration: 400 }),
-      );
-      runOnJS(setCurrentSlide)(currentSlide + 1);
+      setCurrentSlide(currentSlide + 1);
     } else {
       router.replace('/(auth)/login');
     }
   }
 
-  function skip() {
-    router.replace('/(auth)/login');
-  }
-
-  const slide = slides[currentSlide];
-
   return (
     <View style={styles.container}>
       <ParticleBackground />
       <View style={styles.content}>
-        <View style={styles.emojiContainer}>
-          <Text style={styles.emoji}>{slide.emoji}</Text>
+        <View style={styles.logoPanel}>
+          <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
         </View>
+        <Text style={styles.brand}>Mentis</Text>
         <Text style={styles.title}>{slide.title}</Text>
         <Text style={styles.subtitle}>{slide.subtitle}</Text>
 
         <View style={styles.dots}>
           {slides.map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.dot,
-                i === currentSlide && styles.dotActive,
-              ]}
-            />
+            <View key={i} style={[styles.dot, i === currentSlide && styles.dotActive]} />
           ))}
         </View>
 
@@ -86,7 +58,7 @@ export default function OnboardingScreen() {
           <AnimatedButton
             title="Skip"
             variant="ghost"
-            onPress={skip}
+            onPress={() => router.replace('/(auth)/login')}
             style={styles.skipButton}
           />
         )}
@@ -96,33 +68,36 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
   content: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
   },
-  emojiContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: colors.surface,
+  logoPanel: {
+    width: 136,
+    height: 136,
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.bgSecondary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xl,
     borderWidth: 1,
     borderColor: colors.border,
+    marginBottom: spacing.lg,
   },
-  emoji: {
-    fontSize: 56,
+  logo: { width: 108, height: 108 },
+  brand: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 0,
+    textTransform: 'uppercase',
+    marginBottom: spacing.sm,
   },
   title: {
     fontSize: 32,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.text,
     textAlign: 'center',
     marginBottom: spacing.md,
@@ -132,7 +107,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
   },
   dots: {
     flexDirection: 'row',
@@ -150,10 +125,6 @@ const styles = StyleSheet.create({
     width: 24,
     backgroundColor: colors.primary,
   },
-  button: {
-    width: '100%',
-  },
-  skipButton: {
-    marginTop: spacing.sm,
-  },
+  button: { width: '100%' },
+  skipButton: { marginTop: spacing.sm },
 });

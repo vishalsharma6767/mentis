@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
+  Image,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
+  Text,
+  TextInput,
   TouchableOpacity,
+  View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors, spacing, typography, borderRadius } from '../../src/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, borderRadius } from '../../src/theme';
 import { AnimatedButton, ParticleBackground } from '../../src/components';
 import { sendOTP } from '../../src/lib/auth';
 
@@ -20,23 +22,19 @@ export default function LoginScreen() {
   const [error, setError] = useState('');
 
   async function handleSendCode() {
-    if (!email.trim()) {
-      setError('Enter your email address');
-      return;
-    }
-    if (!email.includes('@')) {
-      setError('Enter a valid email');
+    const normalized = email.trim().toLowerCase();
+    if (!normalized || !normalized.includes('@')) {
+      setError('Enter a valid email address.');
       return;
     }
 
     setLoading(true);
     setError('');
-
     try {
-      const userId = await sendOTP(email.trim().toLowerCase());
-      router.push(`/(auth)/verify?userId=${userId}&email=${encodeURIComponent(email.trim())}`);
+      const userId = await sendOTP(normalized);
+      router.push(`/(auth)/verify?userId=${userId}&email=${encodeURIComponent(normalized)}`);
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to send code. Try again.');
+      setError(e?.message ?? 'Could not send the code. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -48,37 +46,41 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ParticleBackground />
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.back()}
-      >
-        <Text style={styles.backText}>← Back</Text>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <Ionicons name="chevron-back" size={22} color={colors.primary} />
+        <Text style={styles.backText}>Back</Text>
       </TouchableOpacity>
 
       <View style={styles.content}>
-        <Text style={styles.title}>Welcome to Mentis</Text>
+        <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+        <Text style={styles.title}>Sign in to Mentis</Text>
         <Text style={styles.subtitle}>
-          Enter your email to receive a verification code
+          Start live AR tutoring, save progress, and download session PDFs.
         </Text>
 
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, !!error && styles.inputError]}>
           <TextInput
             style={styles.input}
-            placeholder="you@email.com"
+            placeholder="student@email.com"
             placeholderTextColor={colors.textTertiary}
             value={email}
-            onChangeText={(t) => { setEmail(t); setError(''); }}
+            onChangeText={(value) => {
+              setEmail(value);
+              setError('');
+            }}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
             editable={!loading}
+            returnKeyType="send"
+            onSubmitEditing={handleSendCode}
           />
         </View>
 
         {!!error && <Text style={styles.error}>{error}</Text>}
 
         <AnimatedButton
-          title="Send Code"
+          title="Send Verification Code"
           onPress={handleSendCode}
           loading={loading}
           disabled={loading}
@@ -90,29 +92,27 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
   backButton: {
-    padding: spacing.lg,
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 20,
-    left: 0,
+    top: Platform.OS === 'ios' ? 58 : 22,
+    left: spacing.md,
     zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    padding: spacing.sm,
   },
-  backText: {
-    color: colors.primary,
-    fontSize: 16,
-  },
+  backText: { color: colors.primary, fontSize: 15, fontWeight: '700' },
   content: {
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
   },
+  logo: { width: 96, height: 96, marginBottom: spacing.lg },
   title: {
     fontSize: 32,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.text,
     marginBottom: spacing.sm,
   },
@@ -128,20 +128,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
-    height: 56,
+    height: 58,
     justifyContent: 'center',
     marginBottom: spacing.md,
   },
-  input: {
-    fontSize: 16,
-    color: colors.text,
-  },
-  error: {
-    color: colors.error,
-    fontSize: 14,
-    marginBottom: spacing.md,
-  },
-  button: {
-    marginTop: spacing.sm,
-  },
+  inputError: { borderColor: colors.error },
+  input: { fontSize: 16, color: colors.text },
+  error: { color: colors.error, fontSize: 14, marginBottom: spacing.md },
+  button: { marginTop: spacing.md },
 });

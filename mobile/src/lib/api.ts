@@ -1,23 +1,46 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 const DEV_URL = 'http://localhost:8000';
 const PROD_URL = (process as any).env?.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'https://mentis-api-t9hk.onrender.com';
 
 export const BASE_URL = __DEV__ ? DEV_URL : PROD_URL;
 
+export type LearningMode = 'math' | 'science' | 'coding' | 'book' | 'homework' | 'language' | 'diagram';
+export type LearnerLevel = 'beginner' | 'intermediate' | 'advanced';
+
+async function appendImage(formData: FormData, imageUri: string) {
+  if (Platform.OS === 'web') {
+    const blob = await fetch(imageUri).then((res) => res.blob());
+    formData.append('file', blob, 'problem.jpg');
+    return;
+  }
+
+  formData.append('file', {
+    uri: imageUri,
+    type: 'image/jpeg',
+    name: 'problem.jpg',
+  } as any);
+}
+
 export const api = {
-  async recognizeProblem(imageUri: string): Promise<{
+  async recognizeProblem(imageUri: string, mode: LearningMode = 'math'): Promise<{
     type: string;
     title: string;
     content: string;
     difficulty: string;
+    detectedElements?: string[];
+    arTargets?: {
+      label: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }[];
   }> {
     const formData = new FormData();
-    formData.append('file', {
-      uri: imageUri,
-      type: 'image/jpeg',
-      name: 'problem.jpg',
-    } as any);
+    await appendImage(formData, imageUri);
+    formData.append('mode', mode);
 
     const res = await fetch(`${BASE_URL}/api/tutor/recognize`, {
       method: 'POST',
@@ -29,7 +52,8 @@ export const api = {
   async generateLesson(
     problemType: string,
     content: string,
-    level: string = 'intermediate',
+    level: LearnerLevel = 'intermediate',
+    mode: LearningMode = 'math',
   ): Promise<{
     steps: {
       number: number;
@@ -37,14 +61,19 @@ export const api = {
       explanation: string;
       hint: string;
       answer: string;
+      ar_annotation?: string;
+      focus?: string;
     }[];
     final_answer: string;
     key_concept: string;
+    confidence_check?: string;
+    recommended_practice?: string[];
   }> {
     const formData = new FormData();
     formData.append('problem_type', problemType);
     formData.append('content', content);
     formData.append('level', level);
+    formData.append('mode', mode);
 
     const res = await fetch(`${BASE_URL}/api/tutor/lesson`, {
       method: 'POST',
@@ -66,6 +95,56 @@ export const api = {
     formData.append('current', JSON.stringify(current));
 
     const res = await fetch(`${BASE_URL}/api/tutor/help`, {
+      method: 'POST',
+      body: formData,
+    });
+    return res.json();
+  },
+
+  async askDoubt(data: {
+    content: string;
+    question: string;
+    current?: any;
+    level?: LearnerLevel;
+    mode?: LearningMode;
+  }): Promise<{
+    reply: string;
+    pen_annotation: string;
+    follow_up: string;
+  }> {
+    const formData = new FormData();
+    formData.append('content', data.content);
+    formData.append('question', data.question);
+    formData.append('current', JSON.stringify(data.current ?? {}));
+    formData.append('level', data.level ?? 'intermediate');
+    formData.append('mode', data.mode ?? 'math');
+
+    const res = await fetch(`${BASE_URL}/api/tutor/doubt`, {
+      method: 'POST',
+      body: formData,
+    });
+    return res.json();
+  },
+
+  async createSessionPdf(data: {
+    title: string;
+    problem: string;
+    steps: any[];
+    transcript: any[];
+    penNotes: any[];
+  }): Promise<{
+    filename: string;
+    mime: string;
+    base64: string;
+  }> {
+    const formData = new FormData();
+    formData.append('title', data.title);
+    formData.append('problem', data.problem);
+    formData.append('steps', JSON.stringify(data.steps));
+    formData.append('transcript', JSON.stringify(data.transcript));
+    formData.append('pen_notes', JSON.stringify(data.penNotes));
+
+    const res = await fetch(`${BASE_URL}/api/tutor/session-pdf`, {
       method: 'POST',
       body: formData,
     });

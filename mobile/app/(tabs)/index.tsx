@@ -8,10 +8,10 @@ import { restoreSession } from '../../src/lib/auth';
 import { api } from '../../src/lib/api';
 
 const quickActions = [
-  { title: 'Quick Scan', icon: 'scan-outline', color: colors.primary },
-  { title: 'Continue Learning', icon: 'book-outline', color: colors.secondary },
-  { title: 'Homework', icon: 'document-text-outline', color: colors.accent },
-  { title: 'Book Mode', icon: 'library-outline', color: '#44FF88' },
+  { title: 'Live Tutor', icon: 'scan-outline', color: colors.primary, route: '/scan' },
+  { title: 'Homework', icon: 'document-text-outline', color: colors.accent, route: '/scan?mode=homework' },
+  { title: 'Book Mode', icon: 'library-outline', color: '#44FF88', route: '/scan?mode=book' },
+  { title: 'Coding Help', icon: 'code-slash-outline', color: colors.secondary, route: '/scan?mode=coding' },
 ];
 
 export default function HomeScreen() {
@@ -47,12 +47,14 @@ export default function HomeScreen() {
 
         <View style={styles.actionsGrid}>
           {quickActions.map((action, i) => (
-            <GlassCard key={i} style={styles.actionCard}>
-              <View style={[styles.actionIcon, { backgroundColor: action.color + '20' }]}>
-                <Ionicons name={action.icon as any} size={24} color={action.color} />
-              </View>
-              <Text style={styles.actionTitle}>{action.title}</Text>
-            </GlassCard>
+            <TouchableOpacity key={i} style={styles.actionShell} onPress={() => router.push(action.route as any)}>
+              <GlassCard style={styles.actionCard}>
+                <View style={[styles.actionIcon, { backgroundColor: action.color + '20' }]}>
+                  <Ionicons name={action.icon as any} size={24} color={action.color} />
+                </View>
+                <Text style={styles.actionTitle}>{action.title}</Text>
+              </GlassCard>
+            </TouchableOpacity>
           ))}
         </View>
 
@@ -123,9 +125,12 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.xl,
   },
-  actionCard: {
+  actionShell: {
     width: '47%',
     aspectRatio: 1,
+  },
+  actionCard: {
+    flex: 1,
   },
   actionIcon: {
     width: 48,
