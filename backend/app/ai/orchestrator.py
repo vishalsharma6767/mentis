@@ -75,7 +75,7 @@ class TeacherOrchestrator:
         self.planner = PlannerAgent(self.personality)
         self.critic = CriticAgent()
         self.responder = ResponderAgent()
-        self.gateway = AIGateway.get_instance()
+        self._gateway: Optional[AIGateway] = None
         self.bus = EventBus.get_instance()
 
         self._teacher_prompt = make_teacher_prompt(self.personality)
@@ -245,14 +245,16 @@ class TeacherOrchestrator:
             )
             messages.append({'role': 'user', 'content': user_content})
 
-            result = await self.gateway.reason(
+            if self._gateway is None:
+                self._gateway = await AIGateway.get_instance()
+            response = await self._gateway.execute(
                 messages=messages,
                 provider=provider,
                 expect_json=True,
                 max_tokens=4096,
                 temperature=0.7,
             )
-            return self._parse_teacher_result(result.text, plan, vision, context, language)
+            return self._parse_teacher_result(response.text, plan, vision, context, language)
         except Exception as exc:
             log.error('teacher_agent_failed', error=str(exc))
             return None

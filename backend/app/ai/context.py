@@ -203,7 +203,7 @@ class ContextEngine:
         self._cache: dict[str, UnifiedStudentContext] = {}
         self._cache_ttl: float = 120.0  # seconds
         self._cache_timestamps: dict[str, float] = {}
-        self._gateway = AIGateway.get_instance()
+        self._gateway: Optional[AIGateway] = None
 
         # Subscribe to events that should invalidate cache
         self._bus.subscribe(EventType.MEMORY_UPDATED, self._on_memory_updated)
@@ -368,7 +368,9 @@ class ContextEngine:
     async def _enrich_vision_topics(self, ctx: UnifiedStudentContext, text: str) -> None:
         """Use a lightweight LLM call to extract topics and difficulty."""
         try:
-            result = await self._gateway.reason(
+            if self._gateway is None:
+                self._gateway = await AIGateway.get_instance()
+            response = await self._gateway.execute(
                 messages=[
                     {
                         'role': 'system',
@@ -382,6 +384,7 @@ class ContextEngine:
                 max_tokens=256,
                 temperature=0.3,
             )
+            result = json.loads(response.text)
             topics = result.get('topics', [])
             if topics:
                 ctx.vision.topics = topics if isinstance(topics, list) else [str(topics)]
