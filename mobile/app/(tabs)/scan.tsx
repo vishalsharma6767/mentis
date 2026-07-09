@@ -17,7 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius } from '../../src/theme';
 import { GlassCard } from '../../src/components';
 const CameraSection = lazy(() => import('../../src/components/CameraSection').then(m => ({ default: m.CameraSection })));
-import { ARPenCanvas, ARPenCanvasHandle } from '../../src/components/ARPenCanvas';
+const ARPenCanvas = lazy(() => import('../../src/components/ARPenCanvas').then(m => ({ default: m.ARPenCanvas })));
+import type { ARPenCanvasHandle } from '../../src/components/ARPenCanvas';
 import { api, LearningMode, BASE_URL } from '../../src/lib/api';
 import { useVoice } from '../../src/lib/voice';
 
@@ -459,7 +460,11 @@ export default function ARScanScreen() {
         </View>
       )}
 
-      <ARPenCanvas ref={canvasRef} color={colors.primary} lineWidth={3} visible={showPen && phase === 'tutoring'} />
+      {!isWeb && showPen && phase === 'tutoring' && (
+        <Suspense fallback={null}>
+          <ARPenCanvas ref={canvasRef} color={colors.primary} lineWidth={3} />
+        </Suspense>
+      )}
 
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.iconBtn} onPress={() => {
