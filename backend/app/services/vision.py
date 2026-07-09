@@ -63,3 +63,5 @@ class VisionService:
                 'detectedElements': ['text'],
                 'arTargets': [{'label': 'problem area', 'x': 0.12, 'y': 0.28, 'width': 0.76, 'height': 0.22}],
             }
+
+vision_service = VisionService(GroqClient())

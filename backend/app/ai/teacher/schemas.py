@@ -1,0 +1,341 @@
+"""Pydantic schemas for the multi-agent teacher pipeline.
+
+Every agent in the pipeline receives a standardized input and produces
+a standardized output. The ``TeacherResponse`` is the final composed
+response sent to the frontend.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
+
+from app.core.constants import (
+    ARAnchorType,
+    ARAnimationType,
+    ARShape,
+    ConfidenceLevel,
+    Difficulty,
+    LessonPhase,
+    MistakeType,
+    SpeechEmotion,
+    SpeechSpeed,
+    Subject,
+)
+
+
+# ── Board Actions ──────────────────────────────────────────────────────
+
+
+class BoardWriteAction(BaseModel):
+    """Write text on the virtual board (same line)."""
+    text: str
+    color: Optional[str] = None
+
+
+class BoardWritelnAction(BaseModel):
+    """Write text on a new line."""
+    text: str
+    color: Optional[str] = None
+
+
+class BoardLineAction(BaseModel):
+    """Draw a straight line."""
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    color: Optional[str] = None
+
+
+class BoardArrowAction(BaseModel):
+    """Draw a line with an arrowhead."""
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    color: Optional[str] = None
+
+
+class BoardCircleAction(BaseModel):
+    """Draw a circle."""
+    x: float
+    y: float
+    radius: float
+    color: Optional[str] = None
+
+
+class BoardUnderlineAction(BaseModel):
+    """Underline a region of the board."""
+    y: float
+    width: float
+    color: Optional[str] = None
+
+
+class BoardClearAction(BaseModel):
+    """Clear the entire board."""
+    pass
+
+
+BoardAction = (
+    BoardWriteAction
+    | BoardWritelnAction
+    | BoardLineAction
+    | BoardArrowAction
+    | BoardCircleAction
+    | BoardUnderlineAction
+    | BoardClearAction
+)
+
+
+# ── AR Actions ─────────────────────────────────────────────────────────
+
+
+class ARAction(BaseModel):
+    """A single AR instruction for the frontend AR engine."""
+    anchor_type: ARAnchorType = ARAnchorType.WORLD
+    shape: ARShape
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    width: Optional[float] = None
+    height: Optional[float] = None
+    radius: Optional[float] = None
+    x2: Optional[float] = None
+    y2: Optional[float] = None
+    color: str = '#00D4FF'
+    label: Optional[str] = None
+    animation: ARAnimationType = ARAnimationType.DRAW
+    duration_ms: int = 500
+    priority: int = 0  # lower = higher priority
+
+
+# ── Speech ─────────────────────────────────────────────────────────────
+
+
+class SpeechAction(BaseModel):
+    """Speech generation instructions for the TTS engine."""
+    text: str
+    language: str = 'hi-IN'
+    emotion: SpeechEmotion = SpeechEmotion.NEUTRAL
+    speed: SpeechSpeed = SpeechSpeed.SLOW
+    pitch: float = 1.05
+    volume: float = 1.0
+    ssml: Optional[str] = None
+
+
+# ── Memory Actions ─────────────────────────────────────────────────────
+
+
+class MemoryUpdate(BaseModel):
+    """Instructions for the memory agent to update student data."""
+    topics_covered: list[str] = Field(default_factory=list)
+    topics_struggled: list[str] = Field(default_factory=list)
+    topics_mastered: list[str] = Field(default_factory=list)
+    mistakes_detected: list[dict[str, Any]] = Field(default_factory=list)
+    confidence_estimate: Optional[ConfidenceLevel] = None
+    session_summary: Optional[str] = None
+    revision_suggestions: list[str] = Field(default_factory=list)
+
+
+# ── Coaching Signals ────────────────────────────────────────────────────
+
+
+class CoachingSignal(BaseModel):
+    """A single signal from the student during a lesson."""
+    type: str  # 'correct_answer', 'wrong_answer', 'hesitation', 'help_request', 'boredom', 'confusion'
+    detail: Optional[str] = None
+    confidence: float = 0.5
+    timestamp: Optional[str] = None
+
+
+class CoachingDecision(BaseModel):
+    """Decision from the Coach Agent on how to adapt."""
+    adaptation: str  # 'continue', 'accelerate', 'slow_down', 'provide_challenge', 'switch_approach', 'repeat_step'
+    confidence: float = 1.0
+    reason: str = ''
+    suggested_action: str = ''
+
+
+# ── Quiz / Checkpoint ──────────────────────────────────────────────────
+
+
+class QuizItem(BaseModel):
+    question: str
+    options: list[str] = Field(default_factory=list)
+    correct_answer: str
+    explanation: str
+    hint: str = ''
+
+
+class HomeworkItem(BaseModel):
+    title: str
+    description: str
+    difficulty: Difficulty = Difficulty.INTERMEDIATE
+
+
+# ── Lesson Steps ───────────────────────────────────────────────────────
+
+
+class LessonStep(BaseModel):
+    """A single step within a lesson plan."""
+    phase: LessonPhase
+    title: str
+    explanation: str
+    board_actions: list[Any] = Field(default_factory=list)
+    ar_actions: list[ARAction] = Field(default_factory=list)
+    speech: Optional[SpeechAction] = None
+    quiz: Optional[QuizItem] = None
+    hint: str = ''
+    duration_seconds: int = 30
+
+
+class LessonPlan(BaseModel):
+    """Complete lesson plan generated by the Planner Agent."""
+    subject: Subject
+    topic: str
+    difficulty: Difficulty
+    prerequisite_topics: list[str] = Field(default_factory=list)
+    steps: list[LessonStep]
+    estimated_total_duration: int = 0
+    key_concepts: list[str] = Field(default_factory=list)
+    homework: list[HomeworkItem] = Field(default_factory=list)
+
+
+# ── Student Context ────────────────────────────────────────────────────
+
+
+class StudentContext(BaseModel):
+    """Current student state compiled by the Memory Agent."""
+    user_id: str
+    display_name: str = ''
+    level: Difficulty = Difficulty.INTERMEDIATE
+    preferred_language: str = 'hinglish'
+    recent_topics: list[str] = Field(default_factory=list)
+    weak_topics: list[str] = Field(default_factory=list)
+    strong_topics: list[str] = Field(default_factory=list)
+    current_streak: int = 0
+    session_count: int = 0
+    current_confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
+    recent_mistakes: list[str] = Field(default_factory=list)
+    revision_due: list[str] = Field(default_factory=list)
+
+
+# ── Pipeline Input / Output ────────────────────────────────────────────
+
+
+class VisionOutput(BaseModel):
+    """Output from the Vision Agent."""
+    raw_text: str
+    subject: Subject = Subject.MATH
+    difficulty: Difficulty = Difficulty.INTERMEDIATE
+    topics: list[str] = Field(default_factory=list)
+    problem_type: str = 'general'
+    detected_elements: list[str] = Field(default_factory=list)
+    diagram_type: Optional[str] = None
+    formulas: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
+class PlannerOutput(BaseModel):
+    """Output from the Planner Agent (feeds into Teacher Agent)."""
+    lesson_plan: LessonPlan
+    teaching_strategy: str = 'step_by_step'
+    adaptations: list[str] = Field(default_factory=list)
+
+
+class TeacherOutput(BaseModel):
+    """Output from the Teacher Agent (feeds into Critic Agent + AR/Speech)."""
+    step: LessonStep
+    speech: SpeechAction
+    board_actions: list[Any] = Field(default_factory=list)
+    memory_update: MemoryUpdate = Field(default_factory=MemoryUpdate)
+    quiz: Optional[QuizItem] = None
+    confidence: float = 1.0
+
+
+class QualityScore(BaseModel):
+    """Multi-dimensional quality score for teacher output."""
+    correctness: int = 7
+    clarity: int = 7
+    age_appropriateness: int = 8
+    safety: int = 9
+    pedagogical_value: int = 7
+    overall: float = 7.0
+
+
+class CriticFeedback(BaseModel):
+    """Detailed feedback from the Critic Agent."""
+    passed: bool = True
+    quality_score: QualityScore = Field(default_factory=QualityScore)
+    revision_requests: list[str] = Field(default_factory=list)
+    comments: str = ''
+
+
+class CriticOutput(BaseModel):
+    """Output from the Critic Agent (quality check)."""
+    original_output: 'TeacherOutput' = None  # type: ignore
+    feedback: CriticFeedback = Field(default_factory=CriticFeedback)
+    passed: bool = True
+    revised_output: Optional['TeacherOutput'] = None
+
+
+class ARPlan(BaseModel):
+    """Output from the AR Agent."""
+    instructions: list[ARAction] = Field(default_factory=list)
+    plane_anchors: list[dict[str, Any]] = Field(default_factory=list)
+    animations: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SpeechPlan(BaseModel):
+    """Output from the Speech Agent."""
+    ssml: str = ''
+    audio_base64: Optional[str] = None
+    duration_ms: int = 0
+    emotion: SpeechEmotion = SpeechEmotion.NEUTRAL
+
+
+class MemoryDelta(BaseModel):
+    """Output from the Memory Agent."""
+    updates: MemoryUpdate
+    knowledge_graph_edges: list[dict[str, Any]] = Field(default_factory=list)
+    revision_updates: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# ── Final Response ─────────────────────────────────────────────────────
+
+
+class TeacherResponse(BaseModel):
+    """The final composed response sent to the frontend.
+
+    Every field is optional so the composer can include only what changed.
+    """
+    speech: Optional[SpeechAction] = None
+    board_actions: list[Any] = Field(default_factory=list)
+    ar_instructions: list[ARAction] = Field(default_factory=list)
+    quiz: Optional[QuizItem] = None
+    ask_doubts: bool = False
+    session_complete: bool = False
+    lesson_plan: Optional[LessonPlan] = None
+    memory_update: Optional[MemoryDelta] = None
+
+
+# ── WebSocket Messages ─────────────────────────────────────────────────
+
+
+class WSIncoming(BaseModel):
+    """Message received from the frontend WebSocket."""
+    type: str = 'message'  # 'message' | 'image' | 'audio'
+    text: Optional[str] = None
+    image_base64: Optional[str] = None
+    audio_base64: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class WSOutgoing(BaseModel):
+    """Message sent to the frontend WebSocket."""
+    type: str = 'response'
+    data: TeacherResponse
+    session_id: Optional[str] = None

@@ -1,15 +1,13 @@
-from pydantic_settings import BaseSettings
+"""Legacy compatibility shim — re-exports from the new ``app.core.config``.
 
+All imports from ``app.config`` continue to work.
+"""
+import warnings
+warnings.warn(
+    'Import from app.core.config instead of app.config',
+    DeprecationWarning,
+    stacklevel=2,
+)
+from app.core.config import Settings, settings, Environment, LogLevel  # noqa: F401
 
-class Settings(BaseSettings):
-    appwrite_endpoint: str = 'https://sgp.cloud.appwrite.io/v1'
-    appwrite_project_id: str = ''
-    appwrite_api_key: str = ''
-    groq_api_key: str = ''
-    database_url: str = 'sqlite:///./mentis.db'
-    redis_url: str = 'redis://localhost:6379/0'
-
-    model_config = {'env_file': '.env', 'env_file_encoding': 'utf-8'}
-
-
-settings = Settings()
+__all__ = ['Settings', 'settings', 'Environment', 'LogLevel']

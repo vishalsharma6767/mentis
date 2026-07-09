@@ -205,8 +205,10 @@ class TutorService:
             'final_answer': 'Continue step by step with the same reasoning pattern.',
             'key_concept': f'{mode.title()} guided problem solving',
             'confidence_check': 'What was the reason for the first step?',
-            'recommended_practice': [
-                'Solve one similar example slowly.',
-                'Say each step out loud before writing it.',
-            ],
-        }
+                'recommended_practice': [
+                    'Solve one similar example slowly.',
+                    'Say each step out loud before writing it.',
+                ],
+            }
+
+tutor_service = TutorService(GroqClient())
