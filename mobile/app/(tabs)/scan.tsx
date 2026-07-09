@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react';
 import {
   View,
   Text,
@@ -14,10 +14,9 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as DeviceMotion from 'expo-sensors';
 import { colors, spacing, borderRadius } from '../../src/theme';
 import { GlassCard } from '../../src/components';
+const CameraSection = lazy(() => import('../../src/components/CameraSection').then(m => ({ default: m.CameraSection })));
 import { ARPenCanvas, ARPenCanvasHandle } from '../../src/components/ARPenCanvas';
 import { api, LearningMode, BASE_URL } from '../../src/lib/api';
 import { useVoice } from '../../src/lib/voice';
@@ -71,7 +70,7 @@ export default function ARScanScreen() {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [phase, setPhase] = useState<'idle' | 'scanning' | 'tutoring' | 'doubts' | 'finished'>('idle');
   const speakAnim = useRef(new Animated.Value(0)).current;
-  const cameraRef = useRef<CameraView>(null);
+  const cameraRef = useRef<any>(null);
   const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const motionSub = useRef<{ remove: () => void } | null>(null);
@@ -97,9 +96,11 @@ export default function ARScanScreen() {
     let sub: { remove: () => void } | null = null;
     (async () => {
       try {
-        const available = await DeviceMotion.isAvailableAsync();
+        const mod = await import('expo-sensors');
+        const dm = (mod as any).DeviceMotion || mod;
+        const available = await dm.isAvailableAsync();
         if (available) {
-          sub = DeviceMotion.addListener((data: any) => {
+          sub = dm.addListener((data: any) => {
             const rot = data.rotation;
             setMotion({
               x: rot?.beta ?? 0,
@@ -107,7 +108,7 @@ export default function ARScanScreen() {
               z: rot?.alpha ?? 0,
             });
           });
-          await DeviceMotion.setUpdateIntervalAsync(100);
+          await dm.setUpdateIntervalAsync(100);
         }
       } catch {}
     })();
@@ -350,26 +351,17 @@ export default function ARScanScreen() {
     };
   }, []);
 
-  const [permission, requestPermission] = useCameraPermissions();
   const isWeb = Platform.OS === 'web';
-
-  const showCamera = isWeb ? false : (permission?.granted && !uploadedImage && phase === 'idle');
-
-  if (!isWeb && !permission) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  const showCamera = !isWeb && !uploadedImage && phase === 'idle';
 
   return (
     <View style={styles.container}>
-      {showCamera ? (
-        <CameraView ref={cameraRef} style={styles.camera} facing="back" enableTorch={false}>
+      {showCamera && (
+        <Suspense fallback={<View style={styles.cameraFallback} />}>
+          <CameraSection ref={cameraRef} />
           <View style={styles.cameraOverlay}>
             <View style={[styles.arFrame, { borderColor: colors.primary + '60' }]} />
-            {phase === 'scanning' && (
+            {(phase as string) === 'scanning' && (
               <View style={styles.scanningOverlay}>
                 <Text style={styles.scanningText}>{loading ? 'Preparing lesson...' : 'Scanning...'}</Text>
               </View>
@@ -381,8 +373,9 @@ export default function ARScanScreen() {
               </TouchableOpacity>
             )}
           </View>
-        </CameraView>
-      ) : (
+        </Suspense>
+      )}
+      {!showCamera && (
         <View style={styles.imagePreviewContainer}>
           {uploadedImage ? (
             <View style={styles.imagePreviewWrapper}>
@@ -532,7 +525,7 @@ export default function ARScanScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
-  camera: StyleSheet.absoluteFill,
+  cameraFallback: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000' },
   cameraOverlay: StyleSheet.absoluteFill,
   arFrame: {
     position: 'absolute',
