@@ -49,6 +49,7 @@ export default function ARScanScreen() {
   const [wsConnected, setWsConnected] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [sessionActive, setSessionActive] = useState(false);
+  const [awaitingDoubts, setAwaitingDoubts] = useState(false);
   const speakAnim = useRef(new Animated.Value(0)).current;
   const cameraRef = useRef<any>(null);
   const canvasRef = useRef<ARPenCanvasHandle>(null);
@@ -109,8 +110,11 @@ export default function ARScanScreen() {
         await new Promise(r => setTimeout(r, 300));
       } else if (action.clear) {
         canvasRef.current?.clearAll();
+      } else if (action.askDoubts) {
+        setAwaitingDoubts(true);
       } else if (action.sessionComplete) {
         setSessionActive(false);
+        setAwaitingDoubts(false);
         await finishSession();
         return;
       }
@@ -351,6 +355,29 @@ export default function ARScanScreen() {
           )}
         </View>
 
+        {awaitingDoubts && (
+          <View style={styles.doubtsOverlay}>
+            <View style={styles.doubtsCard}>
+              <Ionicons name="help-circle" size={40} color={colors.warning} />
+              <Text style={styles.doubtsTitle}>Any doubts?</Text>
+              <Text style={styles.doubtsSub}>Tap the mic to ask, or tap below if all clear.</Text>
+              <View style={styles.doubtsActions}>
+                <TouchableOpacity style={styles.doubtsMicBtn} onPress={toggleMic}>
+                  <Ionicons name="mic" size={22} color={colors.bg} />
+                  <Text style={styles.doubtsBtnText}>Ask Doubt</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.doubtsFinishBtn} onPress={async () => {
+                  setAwaitingDoubts(false);
+                  setSessionActive(false);
+                  await finishSession();
+                }}>
+                  <Text style={styles.doubtsFinishText}>No, download PNG</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+
         {speaking && (
           <View style={styles.speakingIndicator}>
             <Animated.View style={[styles.speakingBar, { transform: [{ scaleY: speakAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.5] }) }] }]} />
@@ -395,4 +422,13 @@ const styles = StyleSheet.create({
   startBtnText: { color: colors.bg, fontSize: 16, fontWeight: '700' },
   speakingIndicator: { position: 'absolute', bottom: Platform.OS === 'ios' ? 120 : 100, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
   speakingBar: { width: 3, height: 16, borderRadius: 2, backgroundColor: colors.primary },
+  doubtsOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 200 },
+  doubtsCard: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.xl, marginHorizontal: spacing.xl, alignItems: 'center', gap: spacing.md, borderWidth: 1, borderColor: colors.border, maxWidth: 340 },
+  doubtsTitle: { color: colors.text, fontSize: 22, fontWeight: '800' },
+  doubtsSub: { color: colors.textSecondary, fontSize: 14, textAlign: 'center' },
+  doubtsActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md, flexWrap: 'wrap', justifyContent: 'center' },
+  doubtsMicBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: borderRadius.md },
+  doubtsFinishBtn: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border },
+  doubtsBtnText: { color: colors.bg, fontWeight: '700', fontSize: 15 },
+  doubtsFinishText: { color: colors.textSecondary, fontWeight: '600', fontSize: 15 },
 });

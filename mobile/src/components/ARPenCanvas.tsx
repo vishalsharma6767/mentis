@@ -31,17 +31,36 @@ canvas{display:block}
 <canvas id="c"></canvas>
 <script>
 var c=document.getElementById('c'),ctx=c.getContext('2d');
-var px=40,py=40,pc='#00E5FF',ps=3,pv=false,lh=42,cw=14,drawing=false,lx=0,ly=0;
+var px=40,py=40,pc='#00E5FF',ps=3,lh=42,cw=14,drawing=false,lx=0,ly=0;
+
 function resize(){var d=window.devicePixelRatio||1;c.width=window.innerWidth*d;c.height=window.innerHeight*d;c.style.width=window.innerWidth+'px';c.style.height=window.innerHeight+'px';ctx.setTransform(1,0,0,1,0,0);ctx.scale(d,d);ctx.lineCap='round';ctx.lineJoin='round'}
 window.addEventListener('resize',resize);resize();
-function cur(){if(!pv)return;ctx.beginPath();ctx.arc(px,py,ps+2,0,Math.PI*2);ctx.fillStyle=pc;ctx.fill();ctx.beginPath();ctx.arc(px,py,ps+5,0,Math.PI*2);ctx.strokeStyle=pc+'60';ctx.lineWidth=1.5;ctx.stroke()}
+
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function drawChar(ch,x,y,clr){ctx.fillStyle=clr||pc;ctx.font='24px \"Times New Roman\",serif';ctx.textBaseline='top';var w=ctx.measureText(ch).width||cw;ctx.fillText(ch,x+((Math.random()-0.5)*1.2),y+((Math.random()-0.5)*1.2));return w}
 
-window.writeText=async function(t,clr,nl){var col=clr||pc;if(nl&&t){px=40;py+=lh}if(!t)return;pv=true;cur();for(var i=0;i<t.length;i++){var ch=t[i];if(ch===' '){px+=cw*0.6;continue}var w=drawChar(ch,px,py,col);px+=w+1;ctx.beginPath();ctx.arc(px,py,ps+2,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();ctx.beginPath();ctx.arc(px,py,ps+5,0,Math.PI*2);ctx.strokeStyle=col+'60';ctx.lineWidth=1.5;ctx.stroke();await sleep(30)}pv=false};
+window.writeText=async function(t,clr,nl){
+  var col=clr||pc;
+  if(nl&&t){px=40;py+=lh}
+  if(!t)return;
+  for(var i=0;i<t.length;i++){
+    var ch=t[i];
+    if(ch===' '){px+=cw*0.6;continue}
+    var w=drawChar(ch,px,py,col);
+    px+=w+1;
+    // Save area, draw cursor, sleep, restore (cursor dot never stays)
+    var sx=px-14,sy=py-14,sw=34,sh=34;
+    var saved=ctx.getImageData(sx,sy,sw,sh);
+    ctx.beginPath();ctx.arc(px,py,ps+3,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();
+    ctx.beginPath();ctx.arc(px,py,ps+6,0,Math.PI*2);ctx.strokeStyle=col+'60';ctx.lineWidth=1.5;ctx.stroke();
+    await sleep(25);
+    ctx.putImageData(saved,sx,sy);
+  }
+};
+
 window.clearAll=function(){var d=window.devicePixelRatio||1;ctx.clearRect(0,0,c.width/d,c.height/d);px=40;py=40};
 window.drawLine=function(x1,y1,x2,y2,col){ctx.strokeStyle=col||pc;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()};
-window.drawUnderlineFn=function(y,w,col){var clr=col||pc;ctx.strokeStyle=clr;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(px,y+30);ctx.lineTo(px+w,y+30);ctx.stroke();pv=true;px+=w;py=y+28;cur();setTimeout(function(){pv=false},200)};
+window.drawUnderlineFn=function(y,w,col){ctx.strokeStyle=col||pc;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(px,y+30);ctx.lineTo(px+w,y+30);ctx.stroke()};
 window.drawCircleFn=function(x,y,r,col){ctx.strokeStyle=col||pc;ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.stroke()};
 window.drawArrowFn=function(x1,y1,x2,y2,col){var clr=col||pc;var hl=10;var ang=Math.atan2(y2-y1,x2-x1);ctx.strokeStyle=clr;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-hl*Math.cos(ang-Math.PI/6),y2-hl*Math.sin(ang-Math.PI/6));ctx.lineTo(x2-hl*Math.cos(ang+Math.PI/6),y2-hl*Math.sin(ang+Math.PI/6));ctx.lineTo(x2,y2);ctx.fillStyle=clr;ctx.fill()};
 window.go=function(cmd){if(cmd==='clear')window.clearAll();else if(cmd==='dataurl'){var u=c.toDataURL('image/png');window.parent&&window.parent.postMessage({type:'canvas_data',url:u},'*')}};
@@ -54,7 +73,17 @@ function en(e){e.preventDefault();drawing=false}
 c.addEventListener('mousedown',st);c.addEventListener('mousemove',mv);c.addEventListener('mouseup',en);c.addEventListener('mouseleave',en);
 c.addEventListener('touchstart',st,{passive:false});c.addEventListener('touchmove',mv,{passive:false});c.addEventListener('touchend',en);c.addEventListener('touchcancel',en);
 
-window.addEventListener('message',function(e){var d=e.data;if(!d||!d.cmd)return;var col=d.color||pc;if(d.cmd==='write')window.writeText(d.text||'',col,false);else if(d.cmd==='writeln')window.writeText(d.text||'',col,true);else if(d.cmd==='clear')window.clearAll();else if(d.cmd==='dataurl')window.go('dataurl');else if(d.cmd==='penColor')pc=col;else if(d.cmd==='underline')window.drawUnderlineFn(d.y||py,d.width||100,col);else if(d.cmd==='circle')window.drawCircleFn(d.x||px,d.y||py,d.radius||30,col);else if(d.cmd==='arrow')window.drawArrowFn(d.x1||px,d.y1||py,d.x2||px+50,d.y2||py,col)});
+window.addEventListener('message',function(e){
+  var d=e.data;if(!d||!d.cmd)return;var col=d.color||pc;
+  if(d.cmd==='write')window.writeText(d.text||'',col,false);
+  else if(d.cmd==='writeln')window.writeText(d.text||'',col,true);
+  else if(d.cmd==='clear')window.clearAll();
+  else if(d.cmd==='dataurl')window.go('dataurl');
+  else if(d.cmd==='penColor')pc=col;
+  else if(d.cmd==='underline')window.drawUnderlineFn(d.y||py,d.width||100,col);
+  else if(d.cmd==='circle')window.drawCircleFn(d.x||px,d.y||py,d.radius||30,col);
+  else if(d.cmd==='arrow')window.drawArrowFn(d.x1||px,d.y1||py,d.x2||px+50,d.y2||py,col);
+});
 
 window.parent&&window.parent.postMessage({type:'ready'},'*');
 </script>
@@ -73,13 +102,13 @@ export const ARPenCanvas = forwardRef<ARPenCanvasHandle, { color?: string; lineW
         if (isWeb) {
           iframeRef.current?.contentWindow?.postMessage(msg, '*');
         } else {
-          const cmd = msg.cmd;
           const col = msg.color || color;
-          if (cmd === 'write') webViewRef.current?.injectJavaScript(`window.writeText('${msg.text?.replace(/'/g, "\\'")}', '${col}', false); true;`);
-          else if (cmd === 'writeln') webViewRef.current?.injectJavaScript(`window.writeText('${msg.text?.replace(/'/g, "\\'")}', '${col}', true); true;`);
-          else if (cmd === 'clear') webViewRef.current?.injectJavaScript('window.clearAll(); true;');
-          else if (cmd === 'penColor') webViewRef.current?.injectJavaScript(`window.setPenColor('${col}'); true;`);
-          else if (cmd === 'dataurl') {
+          const esc = (s: string) => s?.replace(/'/g, "\\'") || '';
+          if (msg.cmd === 'write') webViewRef.current?.injectJavaScript(`window.writeText('${esc(msg.text)}','${col}',false); true;`);
+          else if (msg.cmd === 'writeln') webViewRef.current?.injectJavaScript(`window.writeText('${esc(msg.text)}','${col}',true); true;`);
+          else if (msg.cmd === 'clear') webViewRef.current?.injectJavaScript('window.clearAll(); true;');
+          else if (msg.cmd === 'penColor') webViewRef.current?.injectJavaScript(`window.setPenColor('${col}'); true;`);
+          else if (msg.cmd === 'dataurl') {
             webViewRef.current?.injectJavaScript('(function(){var u=document.getElementById("c").toDataURL("image/png");window.ReactNativeWebView.postMessage(JSON.stringify({type:"canvas_data",url:u}));})(); true;');
           }
         }
@@ -95,10 +124,7 @@ export const ARPenCanvas = forwardRef<ARPenCanvasHandle, { color?: string; lineW
           const handler = (event: any) => {
             try {
               const d = event.data;
-              if (d?.type === 'canvas_data' && d.url) {
-                resolve(d.url);
-                window.removeEventListener('message', handler);
-              }
+              if (d?.type === 'canvas_data' && d.url) { resolve(d.url); window.removeEventListener('message', handler); }
             } catch {}
           };
           window.addEventListener('message', handler);

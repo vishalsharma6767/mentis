@@ -1,42 +1,35 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import json
-import re
 
 from app.services.groq_client import GroqClient
-from app.config import settings
 
 router = APIRouter(prefix='/api/tutor', tags=['tutor'])
 groq = GroqClient()
 
-SYSTEM = """You are Mentis, an AI math and science tutor. You teach by writing on a virtual whiteboard while explaining verbally.
+SYSTEM = """You are Mentis, an AI tutor. You teach by writing on a virtual whiteboard while explaining verbally.
 
-For EACH teaching step, output ONE JSON object per line like this:
-{"say": "text to speak aloud"}
-{"write": "equation or text to write on board (continues same line)"}
+FIRST, teach the complete solution step by step. Output ONE JSON object per line:
+{"say": "text to speak"}
+{"write": "equation or text to write (continues same line)"}
 {"writeln": "next line of board content"}
 {"clear": true}
-{"highlight": "text"}
+
+Write ALL key equations and steps on the board. Speak while writing. Each writeln starts a new line.
+
+AFTER solving completely, ask if they have doubts:
+{"say": "Does everything make sense? Do you have any doubts?"}
+{"askDoubts": true}
+
+Then wait for the student to respond. Answer their questions conversationally.
+When they say "no" or "all clear" or similar, end with:
 {"sessionComplete": true}
 
 RULES:
-- Explain concepts conversationally like a real teacher
+- Output ONLY valid JSON objects, one per line
+- Never output anything else
 - Write equations and key steps on the board using write/writeln
-- Speak while writing — students learn by seeing AND hearing
-- Each writeln starts a new line on the board
-- Encourage the student: ask "Does that make sense?" or "What do you think?"
-- When the problem is fully solved and understood, send {"sessionComplete": true}
-- ALWAYS output valid JSON, one object per line
-- Never output anything except JSON objects, one per line
-
-Example session:
-{"say": "Let's solve 2x + 5 = 15 together"}
-{"write": "2x + 5 = 15"}
-{"say": "First, isolate the variable term by subtracting 5 from both sides"}
-{"writeln": "2x = 15 - 5"}
-{"writeln": "2x = 10"}
-{"say": "Now divide both sides by 2"}
-{"writeln": "x = 5"}
-{"say": "So x equals 5. Does that make sense?"}"""
+- Speak naturally like a real teacher
+- Encourage the student to ask questions after solving"""
 
 
 @router.websocket('/ws/tutor')
@@ -59,7 +52,7 @@ async def tutor_ws(websocket: WebSocket):
             if user_text:
                 messages.append({'role': 'user', 'content': user_text})
             elif is_first:
-                messages.append({'role': 'user', 'content': 'Start teaching me this problem step by step.'})
+                messages.append({'role': 'user', 'content': 'Teach me this problem step by step, then ask if I have any doubts.'})
             else:
                 return
 
@@ -68,7 +61,7 @@ async def tutor_ws(websocket: WebSocket):
                 stream = groq.client.chat.completions.create(
                     model=groq.reasoning_model,
                     messages=messages,
-                    max_tokens=1024,
+                    max_tokens=2048,
                     temperature=0.7,
                     stream=True,
                 )
@@ -80,9 +73,9 @@ async def tutor_ws(websocket: WebSocket):
                     if delta:
                         collected += delta
                         await websocket.send_json({'type': 'chunk', 'text': delta})
-            except Exception:
-                collected = '{"say": "Let me continue explaining. Tell me what step you are on."}'
-                await websocket.send_json({'type': 'chunk', 'text': collected})
+            except Exception as e:
+                collected = '{"say": "Let me continue explaining."}'
+                await websocket.send_json({'type': 'chunk', 'text': str(e)})
 
             if collected:
                 actions = []
@@ -95,7 +88,7 @@ async def tutor_ws(websocket: WebSocket):
                             pass
                 if not actions:
                     text = collected.strip().strip('"')
-                    actions = [{'say': text}]
+                    actions = [{'say': text[:200]}]
                 messages.append({'role': 'assistant', 'content': json.dumps(actions)})
                 await websocket.send_json({'type': 'actions', 'actions': actions})
             await websocket.send_json({'type': 'done'})
