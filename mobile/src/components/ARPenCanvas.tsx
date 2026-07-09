@@ -9,6 +9,7 @@ export interface ARPenCanvasHandle {
   writeln: (text: string, color?: string) => void;
   clearAll: () => void;
   getDataUrl: () => Promise<string | null>;
+  drawLine: (x1: number, y1: number, x2: number, y2: number, color?: string) => void;
   drawUnderline: (y: number, width: number, color?: string) => void;
   drawCircle: (x: number, y: number, radius: number, color?: string) => void;
   drawArrow: (x1: number, y1: number, x2: number, y2: number, color?: string) => void;
@@ -31,10 +32,30 @@ canvas{display:block}
 <canvas id="c"></canvas>
 <script>
 var c=document.getElementById('c'),ctx=c.getContext('2d');
-var px=40,py=40,pc='#00E5FF',ps=3,lh=42,cw=14,drawing=false,lx=0,ly=0;
+var px=40,py=40,pc='#00E5FF',ps=3,lh=42,cw=14,drawing=false,lx=0,ly=0,baseH=0;
 
-function resize(){var d=window.devicePixelRatio||1;c.width=window.innerWidth*d;c.height=window.innerHeight*d;c.style.width=window.innerWidth+'px';c.style.height=window.innerHeight+'px';ctx.setTransform(1,0,0,1,0,0);ctx.scale(d,d);ctx.lineCap='round';ctx.lineJoin='round'}
+function resize(){
+  var d=window.devicePixelRatio||1;
+  var w=window.innerWidth;
+  var h=Math.max(window.innerHeight,py+100);
+  baseH=h;
+  c.width=w*d;c.height=h*d;c.style.width=w+'px';c.style.height=h+'px';
+  ctx.setTransform(1,0,0,1,0,0);ctx.scale(d,d);ctx.lineCap='round';ctx.lineJoin='round'
+}
 window.addEventListener('resize',resize);resize();
+
+function ensureScroll(){
+  var d=window.devicePixelRatio||1;
+  var needed=py+lh+60;
+  if(needed>baseH){
+    var old=ctx.getImageData(0,0,c.width,c.height);
+    baseH=needed;
+    c.height=baseH*d;c.style.height=baseH+'px';
+    ctx.putImageData(old,0,0);
+    ctx.setTransform(1,0,0,1,0,0);ctx.scale(d,d);ctx.lineCap='round';ctx.lineJoin='round';
+  }
+  window.scrollTo({top:Math.max(0,py-window.innerHeight+120),behavior:'smooth'});
+}
 
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function drawChar(ch,x,y,clr){ctx.fillStyle=clr||pc;ctx.font='24px \"Times New Roman\",serif';ctx.textBaseline='top';var w=ctx.measureText(ch).width||cw;ctx.fillText(ch,x+((Math.random()-0.5)*1.2),y+((Math.random()-0.5)*1.2));return w}
@@ -57,9 +78,10 @@ window.writeText=async function(t,clr,nl){
     await sleep(25);
     ctx.putImageData(saved,sx,sy);
   }
+  ensureScroll();
 };
 
-window.clearAll=function(){var d=window.devicePixelRatio||1;ctx.clearRect(0,0,c.width/d,c.height/d);px=40;py=40};
+window.clearAll=function(){var d=window.devicePixelRatio||1;ctx.clearRect(0,0,c.width/d,c.height/d);px=40;py=40;baseH=0;window.scrollTo({top:0,behavior:'smooth'});resize()};
 window.drawLine=function(x1,y1,x2,y2,col){ctx.strokeStyle=col||pc;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()};
 window.drawUnderlineFn=function(y,w,col){ctx.strokeStyle=col||pc;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(px,y+30);ctx.lineTo(px+w,y+30);ctx.stroke()};
 window.drawCircleFn=function(x,y,r,col){ctx.strokeStyle=col||pc;ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.stroke()};
@@ -81,6 +103,7 @@ window.addEventListener('message',function(e){
   else if(d.cmd==='clear')window.clearAll();
   else if(d.cmd==='dataurl')window.go('dataurl');
   else if(d.cmd==='penColor')pc=col;
+  else if(d.cmd==='line')window.drawLine(d.x1||px,d.y1||py,d.x2||px+50,d.y2||py,col);
   else if(d.cmd==='underline')window.drawUnderlineFn(d.y||py,d.width||100,col);
   else if(d.cmd==='circle')window.drawCircleFn(d.x||px,d.y||py,d.radius||30,col);
   else if(d.cmd==='arrow')window.drawArrowFn(d.x1||px,d.y1||py,d.x2||px+50,d.y2||py,col);
@@ -109,6 +132,7 @@ export const ARPenCanvas = forwardRef<ARPenCanvasHandle, { color?: string; lineW
           else if (msg.cmd === 'writeln') webViewRef.current?.injectJavaScript(`window.writeText('${esc(msg.text)}','${col}',true); true;`);
           else if (msg.cmd === 'clear') webViewRef.current?.injectJavaScript('window.clearAll(); true;');
           else if (msg.cmd === 'penColor') webViewRef.current?.injectJavaScript(`window.setPenColor('${col}'); true;`);
+          else if (msg.cmd === 'line') webViewRef.current?.injectJavaScript(`window.drawLine(${msg.x1||40},${msg.y1||40},${msg.x2||200},${msg.y2||200},'${col}'); true;`);
           else if (msg.cmd === 'dataurl') {
             webViewRef.current?.injectJavaScript('(function(){var u=document.getElementById("c").toDataURL("image/png");window.ReactNativeWebView.postMessage(JSON.stringify({type:"canvas_data",url:u}));})(); true;');
           }
@@ -133,6 +157,7 @@ export const ARPenCanvas = forwardRef<ARPenCanvasHandle, { color?: string; lineW
           setTimeout(() => { window.removeEventListener('message', handler); resolve(null); }, 3000);
         });
       },
+      drawLine(x1, y1, x2, y2, c) { postToCanvas({ cmd: 'line', x1, y1, x2, y2, color: c || color }); },
       drawUnderline(y, width, c) { postToCanvas({ cmd: 'underline', y, width, color: c || color }); },
       drawCircle(x, y, radius, c) { postToCanvas({ cmd: 'circle', x, y, radius, color: c || color }); },
       drawArrow(x1, y1, x2, y2, c) { postToCanvas({ cmd: 'arrow', x1, y1, x2, y2, color: c || color }); },

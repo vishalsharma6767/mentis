@@ -173,7 +173,7 @@ export function useVoice() {
         const hiVoice = await findVoice('hi');
         return new Promise<void>((resolve) => {
           const utterance = new SpeechSynthesisUtterance(text);
-          utterance.rate = 0.88;
+          utterance.rate = 0.76;
           utterance.pitch = 1.05;
           if (hiVoice) { utterance.voice = hiVoice; utterance.lang = 'hi-IN'; }
           else { utterance.lang = 'en-IN'; }
@@ -189,7 +189,7 @@ export function useVoice() {
       const mod = await import('expo-speech');
       mod.speak(text, {
         language: 'hi-IN',
-        rate: 0.85,
+        rate: 0.76,
         onDone: () => setIsSpeaking(false),
         onError: () => setIsSpeaking(false),
       });
@@ -199,7 +199,7 @@ export function useVoice() {
         const mod = await import('expo-speech');
         mod.speak(text, {
           language: 'en-IN',
-          rate: 0.85,
+          rate: 0.76,
           onDone: () => setIsSpeaking(false),
           onError: () => setIsSpeaking(false),
         });

@@ -135,6 +135,14 @@ export default function ARScanScreen() {
         await new Promise(r => setTimeout(r, 300));
       } else if (action.clear) {
         canvasRef.current?.clearAll();
+      } else if (action.line) {
+        canvasRef.current?.drawLine(action.line.x1, action.line.y1, action.line.x2, action.line.y2, action.line.color);
+      } else if (action.arrow) {
+        canvasRef.current?.drawArrow(action.arrow.x1, action.arrow.y1, action.arrow.x2, action.arrow.y2, action.arrow.color);
+      } else if (action.circle) {
+        canvasRef.current?.drawCircle(action.circle.x, action.circle.y, action.circle.radius, action.circle.color);
+      } else if (action.underline) {
+        canvasRef.current?.drawUnderline(action.underline.y, action.underline.width, action.underline.color);
       } else if (action.askDoubts) {
         setAwaitingDoubts(true);
       } else if (action.sessionComplete) {
