@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Platform } from 'react-native';
 import { api } from './api';
 
@@ -9,6 +9,87 @@ function noop() {}
 export function useVoice() {
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const recognitionRef = useRef<any>(null);
+  const finalTranscriptRef = useRef('');
+  const silenceTimerRef = useRef<any>(null);
+  const onTranscriptReadyRef = useRef<((text: string) => void) | null>(null);
+
+  // Web SpeechRecognition setup
+  useEffect(() => {
+    if (!isWeb) return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          final += result[0].transcript;
+        } else {
+          interim += result[0].transcript;
+        }
+      }
+      if (final) {
+        finalTranscriptRef.current += ' ' + final;
+        setTranscript(finalTranscriptRef.current.trim());
+      }
+      if (interim) {
+        setTranscript((finalTranscriptRef.current + ' ' + interim).trim());
+      }
+      // Reset silence timer
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        const text = finalTranscriptRef.current.trim();
+        if (text && onTranscriptReadyRef.current) {
+          onTranscriptReadyRef.current(text);
+          finalTranscriptRef.current = '';
+          setTranscript('');
+        }
+      }, 1200);
+    };
+
+    recognition.onerror = noop;
+    recognitionRef.current = recognition;
+
+    return () => {
+      try { recognition.stop(); } catch {}
+    };
+  }, []);
+
+  const startListening = useCallback((onReady: (text: string) => void) => {
+    onTranscriptReadyRef.current = onReady;
+    if (isWeb) {
+      try {
+        recognitionRef.current?.start();
+        setIsRecording(true);
+      } catch {
+        try {
+          recognitionRef.current?.stop();
+          setTimeout(() => recognitionRef.current?.start(), 100);
+          setIsRecording(true);
+        } catch {}
+      }
+    }
+  }, []);
+
+  const stopListening = useCallback(() => {
+    if (isWeb) {
+      try { recognitionRef.current?.stop(); } catch {}
+    }
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    setIsRecording(false);
+    finalTranscriptRef.current = '';
+    setTranscript('');
+    onTranscriptReadyRef.current = null;
+  }, []);
 
   async function startRecording() {
     if (isWeb) return;
@@ -119,6 +200,9 @@ export function useVoice() {
     transcribeAudio,
     speakText,
     stopSpeaking,
+    startListening,
+    stopListening,
+    transcript,
     isRecording,
     isSpeaking,
   };
