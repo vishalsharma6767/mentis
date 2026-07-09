@@ -146,16 +146,34 @@ export default function ARScanScreen() {
     }
   }, [selectedMode, processActions]);
 
-  const handleVoiceInput = useCallback(async (text: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({ text }));
+  const sendToWs = useCallback((text: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ text }));
+    }
   }, []);
 
-  useEffect(() => {
-    if (!sessionActive) {
-      voice.stopListening();
+  const toggleMic = useCallback(async () => {
+    if (voice.isRecording) {
+      if (isWeb) {
+        voice.stopListening();
+      } else {
+        const uri = await voice.stopRecording();
+        if (uri) {
+          const text = await voice.transcribeAudio(uri);
+          if (text) sendToWs(text);
+        }
+      }
+    } else {
+      if (isWeb) {
+        voice.startListening((text) => {
+          sendToWs(text);
+          voice.stopListening();
+        });
+      } else {
+        await voice.startRecording();
+      }
     }
-  }, [sessionActive, voice]);
+  }, [voice, sendToWs]);
 
   const startSession = useCallback(async (imageUri: string) => {
     setIsScanning(true);
@@ -170,11 +188,10 @@ export default function ARScanScreen() {
       canvasRef.current?.clearAll();
       setSessionActive(true);
       await connectWebSocket(problem.content);
-      voice.startListening(handleVoiceInput);
     } catch {
       setIsScanning(false);
     }
-  }, [selectedMode, connectWebSocket, voice, handleVoiceInput]);
+  }, [selectedMode, connectWebSocket]);
 
   const handleImageUpload = useCallback(() => {
     const input = document.createElement('input');
@@ -271,7 +288,7 @@ export default function ARScanScreen() {
           </View>
         )}
 
-        {sessionActive && !isWeb && (
+        {sessionActive && (
           <Suspense fallback={null}>
             <ARPenCanvas ref={canvasRef} color={colors.primary} lineWidth={3} />
           </Suspense>
@@ -306,24 +323,16 @@ export default function ARScanScreen() {
           {sessionActive && (
             <TouchableOpacity
               style={[styles.micBtn, voice.isRecording && styles.micBtnActive]}
-              onPress={() => {
-                if (voice.isRecording) {
-                  voice.stopListening();
-                } else {
-                  voice.startListening(handleVoiceInput);
-                }
-              }}
+              onPress={toggleMic}
             >
               <Ionicons
                 name={voice.isRecording ? 'mic' : 'mic-outline'}
                 size={28}
                 color={voice.isRecording ? colors.accent : colors.text}
               />
-              {voice.transcript ? (
-                <Text style={styles.micText} numberOfLines={1}>{voice.transcript}</Text>
-              ) : (
-                <Text style={styles.micText}>{voice.isRecording ? 'Listening...' : 'Tap to speak'}</Text>
-              )}
+              <Text style={styles.micText}>
+                {voice.isRecording ? (voice.transcript || 'Listening...') : 'Tap to speak'}
+              </Text>
             </TouchableOpacity>
           )}
 
