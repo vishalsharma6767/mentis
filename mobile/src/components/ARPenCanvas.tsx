@@ -174,6 +174,14 @@ export const ARPenCanvas = forwardRef<ARPenCanvasHandle, { color?: string; lineW
           mixedContentMode="always"
           onError={() => {}}
           onHttpError={() => {}}
+          onMessage={(event: any) => {
+            try {
+              const d = JSON.parse(event.nativeEvent.data);
+              if (d?.type === 'canvas_data' && d.url) {
+                window.dispatchEvent(new MessageEvent('message', { data: d }));
+              }
+            } catch {}
+          }}
         />
       </View>
     );

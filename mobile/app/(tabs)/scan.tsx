@@ -84,6 +84,31 @@ export default function ARScanScreen() {
     setSpeaking(false);
   }, [voice]);
 
+  const finishSession = useCallback(async () => {
+    try {
+      await new Promise(r => setTimeout(r, 500));
+      const dataUrl = await canvasRef.current?.getDataUrl();
+      setSessionActive(false);
+      if (!dataUrl) {
+        setTimeout(() => router.back(), 1000);
+        return;
+      }
+      if (isWeb) {
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `solution-${Date.now()}.png`;
+        link.click();
+      } else {
+        const FileSystem = await import('expo-file-system');
+        const path = `${(FileSystem as any).documentDirectory}solution-${Date.now()}.png`;
+        const base64 = dataUrl.split(',')[1];
+        await FileSystem.writeAsStringAsync(path, base64, { encoding: FileSystem.EncodingType.Base64 });
+        Alert.alert('Session Complete', `Solution saved to: ${path}`);
+      }
+    } catch {}
+    setTimeout(() => router.back(), 2000);
+  }, [router]);
+
   const processActions = useCallback(async (actions: any[]) => {
     if (processingRef.current) {
       actionsQueueRef.current.push(...actions);
@@ -113,14 +138,13 @@ export default function ARScanScreen() {
       } else if (action.askDoubts) {
         setAwaitingDoubts(true);
       } else if (action.sessionComplete) {
-        setSessionActive(false);
         setAwaitingDoubts(false);
         await finishSession();
         return;
       }
     }
     processingRef.current = false;
-  }, [speak]);
+  }, [speak, finishSession]);
 
   const connectWebSocket = useCallback(async (content: string) => {
     if (wsRef.current) wsRef.current.close();
@@ -224,30 +248,6 @@ export default function ARScanScreen() {
       }
     } catch {}
   }, [startSession]);
-
-  const finishSession = useCallback(async () => {
-    setSessionActive(false);
-    try {
-      const dataUrl = await canvasRef.current?.getDataUrl();
-      if (!dataUrl) {
-        setTimeout(() => router.back(), 1000);
-        return;
-      }
-      if (isWeb) {
-        const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = `solution-${Date.now()}.png`;
-        link.click();
-      } else {
-        const FileSystem = await import('expo-file-system');
-        const path = `${(FileSystem as any).documentDirectory}solution-${Date.now()}.png`;
-        const base64 = dataUrl.split(',')[1];
-        await FileSystem.writeAsStringAsync(path, base64, { encoding: FileSystem.EncodingType.Base64 });
-        Alert.alert('Session Complete', `Solution saved to: ${path}`);
-      }
-    } catch {}
-    setTimeout(() => router.back(), 1500);
-  }, [router]);
 
   const showCamera = !isWeb && !uploadedImage;
 
@@ -368,7 +368,6 @@ export default function ARScanScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.doubtsFinishBtn} onPress={async () => {
                   setAwaitingDoubts(false);
-                  setSessionActive(false);
                   await finishSession();
                 }}>
                   <Text style={styles.doubtsFinishText}>No, download PNG</Text>

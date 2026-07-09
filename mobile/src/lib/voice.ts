@@ -157,13 +157,26 @@ export function useVoice() {
     }
   }
 
+  async function findVoice(lang: string): Promise<SpeechSynthesisVoice | undefined> {
+    for (let i = 0; i < 10; i++) {
+      const voices = speechSynthesis.getVoices();
+      if (voices.length > 0) return voices.find(v => v.lang.startsWith(lang));
+      await new Promise(r => setTimeout(r, 200));
+    }
+    return undefined;
+  }
+
   async function speakText(text: string) {
     if (isWeb) {
       if ('speechSynthesis' in window) {
         setIsSpeaking(true);
+        const hiVoice = await findVoice('hi');
         return new Promise<void>((resolve) => {
           const utterance = new SpeechSynthesisUtterance(text);
-          utterance.rate = 0.85;
+          utterance.rate = 0.88;
+          utterance.pitch = 1.05;
+          if (hiVoice) { utterance.voice = hiVoice; utterance.lang = 'hi-IN'; }
+          else { utterance.lang = 'en-IN'; }
           utterance.onend = () => { setIsSpeaking(false); resolve(); };
           utterance.onerror = () => { setIsSpeaking(false); resolve(); };
           speechSynthesis.speak(utterance);
@@ -175,13 +188,24 @@ export function useVoice() {
       setIsSpeaking(true);
       const mod = await import('expo-speech');
       mod.speak(text, {
-        language: 'en',
+        language: 'hi-IN',
         rate: 0.85,
         onDone: () => setIsSpeaking(false),
         onError: () => setIsSpeaking(false),
       });
     } catch {
-      setIsSpeaking(false);
+      try {
+        setIsSpeaking(true);
+        const mod = await import('expo-speech');
+        mod.speak(text, {
+          language: 'en-IN',
+          rate: 0.85,
+          onDone: () => setIsSpeaking(false),
+          onError: () => setIsSpeaking(false),
+        });
+      } catch {
+        setIsSpeaking(false);
+      }
     }
   }
 
