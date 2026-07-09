@@ -24,7 +24,7 @@ const CANVAS_HTML = `
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:transparent}
+html,body{width:100%;height:100%;overflow-y:auto;background:transparent}
 canvas{display:block}
 </style>
 </head>
@@ -190,8 +190,8 @@ export const ARPenCanvas = forwardRef<ARPenCanvasHandle, { color?: string; lineW
           source={{ html: CANVAS_HTML }}
           style={{ flex: 1, backgroundColor: 'transparent' }}
           pointerEvents="auto"
-          scrollEnabled={false}
-          overScrollMode="never"
+          scrollEnabled={true}
+          overScrollMode="always"
           javaScriptEnabled={true}
           domStorageEnabled={false}
           startInLoadingState={false}
