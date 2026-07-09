@@ -1,12 +1,11 @@
-import { useEffect, useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { colors, spacing, borderRadius } from '../../src/theme';
 import { GlassCard } from '../../src/components';
 import { LearningMode, api } from '../../src/lib/api';
-
-const isWeb = Platform.OS === 'web';
 
 const modes: {
   id: LearningMode;
@@ -14,154 +13,55 @@ const modes: {
   icon: keyof typeof Ionicons.glyphMap;
   hint: string;
 }[] = [
-  { id: 'math', title: 'Math', icon: 'calculator-outline', hint: 'Equations, graphs, word problems' },
-  { id: 'science', title: 'Science', icon: 'flask-outline', hint: 'Diagrams, lab equipment, circuits' },
-  { id: 'coding', title: 'Coding', icon: 'code-slash-outline', hint: 'Errors, snippets, algorithms' },
-  { id: 'book', title: 'Book', icon: 'library-outline', hint: 'Summaries, quizzes, flashcards' },
-  { id: 'homework', title: 'Homework', icon: 'document-text-outline', hint: 'Worksheet planning and help' },
-  { id: 'language', title: 'Language', icon: 'language-outline', hint: 'Translate, grammar, pronunciation' },
-  { id: 'diagram', title: 'Diagram', icon: 'git-network-outline', hint: 'Labels, flows, relationships' },
+  { id: 'math', title: 'Math', icon: 'calculator', hint: 'Equations, graphs, word problems' },
+  { id: 'science', title: 'Science', icon: 'flask', hint: 'Diagrams, lab equipment, circuits' },
+  { id: 'coding', title: 'Coding', icon: 'code-slash', hint: 'Errors, snippets, algorithms' },
+  { id: 'book', title: 'Book', icon: 'library', hint: 'Summaries, quizzes, flashcards' },
+  { id: 'homework', title: 'Homework', icon: 'document-text', hint: 'Worksheet planning and help' },
+  { id: 'language', title: 'Language', icon: 'language', hint: 'Translate, grammar, pronunciation' },
+  { id: 'diagram', title: 'Diagram', icon: 'git-network', hint: 'Labels, flows, relationships' },
 ];
 
-export default function ScanScreen() {
+export default function ARScanScreen() {
   const router = useRouter();
   const { mode } = useLocalSearchParams<{ mode?: LearningMode }>();
   const [analyzing, setAnalyzing] = useState(false);
   const [selectedMode, setSelectedMode] = useState<LearningMode>(mode ?? 'math');
+  const cameraRef = useRef<any>(null);
 
-  useEffect(() => {
-    if (mode) setSelectedMode(mode);
-  }, [mode]);
-
-  async function pickFileWeb(): Promise<string | null> {
-    return new Promise((resolve) => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      input.onchange = (e: any) => {
-        const file = e.target?.files?.[0];
-        if (file) resolve(URL.createObjectURL(file));
-        else resolve(null);
-      };
-      input.click();
-    });
-  }
-
-  async function analyzeImage(uri: string) {
+  const handleCapture = async () => {
+    if (!cameraRef.current || analyzing) return;
     setAnalyzing(true);
     try {
-      const problem = await api.recognizeProblem(uri, selectedMode);
-      router.push(
-        `/ar-tutor-realtime?type=${encodeURIComponent(problem.type)}&mode=${encodeURIComponent(selectedMode)}&content=${encodeURIComponent(problem.content)}&title=${encodeURIComponent(problem.title)}&difficulty=${encodeURIComponent(problem.difficulty)}&imageUri=${encodeURIComponent(uri)}&arTargets=${encodeURIComponent(JSON.stringify(problem.arTargets ?? []))}`,
-      );
+      const photo = await cameraRef.current.takePictureAsync({ base64: false, quality: 0.85 });
+      if (photo?.uri) {
+        const problem = await api.recognizeProblem(photo.uri, selectedMode);
+        router.push(
+          `/ar-tutor-realtime?type=${encodeURIComponent(problem.type)}&mode=${encodeURIComponent(selectedMode)}&content=${encodeURIComponent(problem.content)}&title=${encodeURIComponent(problem.title)}&difficulty=${encodeURIComponent(problem.difficulty)}&imageUri=${encodeURIComponent(photo.uri)}`
+        );
+      }
     } catch (e) {
       console.error('Capture error:', e);
     } finally {
       setAnalyzing(false);
     }
-  }
+  };
 
-  async function handleWebCapture() {
-    const uri = await pickFileWeb();
-    if (uri) await analyzeImage(uri);
-  }
-
-  if (isWeb) {
+  if (Platform.OS === 'web') {
     return (
       <View style={styles.container}>
         <View style={styles.center}>
-          <ModePicker selectedMode={selectedMode} onSelect={setSelectedMode} />
-          <Ionicons name="cloud-upload-outline" size={56} color={colors.primary} />
-          <Text style={styles.permissionText}>Upload a page, worksheet, diagram, code screenshot, or textbook photo.</Text>
-          <TouchableOpacity style={styles.permissionButton} onPress={handleWebCapture} disabled={analyzing}>
-            {analyzing ? (
-              <ActivityIndicator size="small" color={colors.bg} />
-            ) : (
-              <Text style={styles.permissionButtonText}>Choose Image</Text>
-            )}
+          <Ionicons name="cloud-upload" size={56} color={colors.primary} />
+          <Text style={styles.permissionText}>Upload a photo to start AR tutoring</Text>
+          <TouchableOpacity style={styles.uploadButton}>
+            <Text style={styles.uploadButtonText}>Choose Image</Text>
           </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <NativeCameraView
-      analyzing={analyzing}
-      selectedMode={selectedMode}
-      onSelectMode={setSelectedMode}
-      onImageReady={analyzeImage}
-    />
-  );
-}
-
-function ModePicker({
-  selectedMode,
-  onSelect,
-}: {
-  selectedMode: LearningMode;
-  onSelect: (mode: LearningMode) => void;
-}) {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.modeRow}
-    >
-      {modes.map((mode) => {
-        const active = selectedMode === mode.id;
-        return (
-          <TouchableOpacity
-            key={mode.id}
-            style={[styles.modeChip, active && styles.modeChipActive]}
-            onPress={() => onSelect(mode.id)}
-          >
-            <Ionicons name={mode.icon} size={18} color={active ? colors.bg : colors.textSecondary} />
-            <Text style={[styles.modeText, active && styles.modeTextActive]}>{mode.title}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  );
-}
-
-function NativeCameraView({
-  analyzing,
-  selectedMode,
-  onSelectMode,
-  onImageReady,
-}: {
-  analyzing: boolean;
-  selectedMode: LearningMode;
-  onSelectMode: (mode: LearningMode) => void;
-  onImageReady: (uri: string) => void;
-}) {
-  const cameraRef = useRef<any>(null);
-  let CameraView: any = null;
-  let useCameraPermissions: any = () => [null, async () => {}];
-
-  try {
-    const mod = require('expo-camera');
-    CameraView = mod.CameraView;
-    useCameraPermissions = mod.useCameraPermissions;
-  } catch {
-    return (
-      <View style={styles.container}>
-        <View style={styles.center}>
-          <Text style={styles.permissionText}>Camera module unavailable</Text>
         </View>
       </View>
     );
   }
 
   const [permission, requestPermission] = useCameraPermissions();
-  const mode = modes.find((item) => item.id === selectedMode) ?? modes[0];
-
-  async function handleCapture() {
-    if (!cameraRef.current || analyzing) return;
-    const photo = await cameraRef.current.takePictureAsync({ base64: false, quality: 0.85 });
-    if (photo?.uri) onImageReady(photo.uri);
-  }
 
   if (!permission) {
     return <View style={styles.container} />;
@@ -171,8 +71,8 @@ function NativeCameraView({
     return (
       <View style={styles.container}>
         <View style={styles.center}>
-          <Ionicons name="camera-outline" size={64} color={colors.textTertiary} />
-          <Text style={styles.permissionText}>Camera access needed to scan problems</Text>
+          <Ionicons name="camera" size={64} color={colors.textTertiary} />
+          <Text style={styles.permissionText}>Camera access needed for AR tutoring</Text>
           <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
             <Text style={styles.permissionButtonText}>Grant Permission</Text>
           </TouchableOpacity>
@@ -186,24 +86,42 @@ function NativeCameraView({
       <CameraView ref={cameraRef} style={styles.camera} facing="back" ratio="4:3">
         <View style={styles.overlay}>
           <View style={styles.topPanel}>
-            <ModePicker selectedMode={selectedMode} onSelect={onSelectMode} />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modeRow}>
+            </ScrollView>
+            <View style={styles.modeRow}>
+              {modes.map((m) => {
+                const active = selectedMode === m.id;
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[styles.modeChip, active && styles.modeChipActive]}
+                    onPress={() => setSelectedMode(m.id)}
+                  >
+                    <Ionicons name={m.icon} size={18} color={active ? colors.bg : colors.textSecondary} />
+                    <Text style={[styles.modeText, active && styles.modeTextActive]}>{m.title}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             <GlassCard style={styles.modeSummary}>
               <View style={styles.modeSummaryRow}>
-                <Ionicons name={mode.icon} size={20} color={colors.primary} />
+                <Ionicons name={modes.find((m) => m.id === selectedMode)?.icon} size={20} color={colors.primary} />
                 <View style={styles.modeCopy}>
-                  <Text style={styles.modeTitle}>{mode.title} tutor</Text>
-                  <Text style={styles.modeHint}>{mode.hint}</Text>
+                  <Text style={styles.modeTitle}>{modes.find((m) => m.id === selectedMode)?.title} Tutor</Text>
+                  <Text style={styles.modeHint}>{modes.find((m) => m.id === selectedMode)?.hint}</Text>
                 </View>
               </View>
             </GlassCard>
           </View>
+
           <View style={styles.viewfinder}>
             <View style={styles.cornerTL} />
             <View style={styles.cornerTR} />
             <View style={styles.cornerBL} />
             <View style={styles.cornerBR} />
           </View>
-          <Text style={styles.hint}>Point at the learning material and keep it inside the frame</Text>
+
+          <Text style={styles.hint}>Point at your learning material</Text>
         </View>
       </CameraView>
 
@@ -228,15 +146,17 @@ function NativeCameraView({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
-  permissionText: { color: colors.textSecondary, textAlign: 'center', fontSize: 16 },
+  permissionText: { color: colors.textSecondary, textAlign: 'center', fontSize: 16, marginBottom: spacing.md },
   permissionButton: { backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: borderRadius.md },
   permissionButtonText: { color: colors.bg, fontWeight: '600', fontSize: 16 },
+  uploadButton: { backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: borderRadius.md },
+  uploadButtonText: { color: colors.bg, fontWeight: '600', fontSize: 16 },
   camera: { flex: 1 },
   overlay: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.lg },
   topPanel: { position: 'absolute', top: Platform.OS === 'ios' ? 58 : 28, left: 0, right: 0 },
-  modeRow: { paddingHorizontal: spacing.lg, gap: spacing.sm },
+  modeRow: { paddingHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.sm },
   modeChip: {
-    height: 38,
+    height: 36,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -249,7 +169,7 @@ const styles = StyleSheet.create({
   modeChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   modeText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
   modeTextActive: { color: colors.bg },
-  modeSummary: { marginHorizontal: spacing.lg, marginTop: spacing.sm },
+  modeSummary: { marginHorizontal: spacing.lg },
   modeSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   modeCopy: { flex: 1 },
   modeTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },

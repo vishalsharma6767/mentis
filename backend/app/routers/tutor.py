@@ -290,3 +290,46 @@ async def get_stats(userId: str = Query(...)):
         'completedSessions': len(completed),
         'topTopics': sorted(types.items(), key=lambda x: -x[1])[:5],
     }
+
+
+@router.get('/streak')
+async def get_streak(userId: str = Query(...)):
+    from appwrite.query import Query as AppwriteQuery
+    from datetime import datetime, timezone, timedelta
+    docs = databases.list_documents(
+        database_id=DATABASE_ID,
+        collection_id=SESSION_COLLECTION,
+        queries=[
+            AppwriteQuery.equal('userId', userId),
+            AppwriteQuery.equal('status', 'completed'),
+            AppwriteQuery.order_desc('createdAt'),
+            AppwriteQuery.limit(1000),
+        ],
+    )
+    sessions = docs.documents
+    if not sessions:
+        return {'streak': 0, 'lastActive': None}
+    dates = []
+    for s in sessions:
+        ts = s.get('createdAt')
+        if not ts:
+            continue
+        try:
+            dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+            dates.append(dt.date())
+        except Exception:
+            continue
+    unique_dates = sorted(set(dates), reverse=True)
+    today = datetime.now(timezone.utc).date()
+    yesterday = today - timedelta(days=1)
+    if not unique_dates:
+        return {'streak': 0, 'lastActive': None}
+    if unique_dates[0] != today and unique_dates[0] != yesterday:
+        return {'streak': 0, 'lastActive': unique_dates[0].isoformat()}
+    streak = 1
+    for i in range(1, len(unique_dates)):
+        if (unique_dates[i - 1] - unique_dates[i]).days == 1:
+            streak += 1
+        else:
+            break
+    return {'streak': streak, 'lastActive': unique_dates[0].isoformat()}

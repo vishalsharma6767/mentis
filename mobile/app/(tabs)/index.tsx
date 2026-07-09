@@ -3,29 +3,33 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography } from '../../src/theme';
-import { GlassCard, ParticleBackground } from '../../src/components';
+import { GlassCard, AnimatedButton } from '../../src/components';
 import { restoreSession } from '../../src/lib/auth';
 import { api } from '../../src/lib/api';
 
-const quickActions = [
-  { title: 'Live Tutor', icon: 'scan-outline', color: colors.primary, route: '/scan' },
-  { title: 'AR Realtime', icon: 'scan-outline', color: colors.accent, route: '/ar-tutor-realtime' },
-  { title: 'Homework', icon: 'document-text-outline', color: colors.secondary, route: '/scan?mode=homework' },
-  { title: 'Coding Help', icon: 'code-slash-outline', color: '#44FF88', route: '/scan?mode=coding' },
-];
-
-export default function HomeScreen() {
+export default function DashboardScreen() {
   const router = useRouter();
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [greeting, setGreeting] = useState('Good morning');
+  const [stats, setStats] = useState<{ totalSessions: number; completedSessions: number; topTopics: [string, number][] } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [streak, setStreak] = useState(0);
 
   useEffect(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) setGreeting('Good morning');
+    else if (hour < 17) setGreeting('Good afternoon');
+    else setGreeting('Good evening');
+
     async function load() {
       try {
         const session = await restoreSession();
         if (session) {
-          const data = await api.listSessions(session.userId, 5);
-          setSessions(data.sessions);
+          const [data, streakData] = await Promise.all([
+            api.getStats(session.userId),
+            api.getStreak(session.userId),
+          ]);
+          setStats(data);
+          setStreak(streakData.streak);
         }
       } catch {} finally {
         setLoading(false);
@@ -34,23 +38,58 @@ export default function HomeScreen() {
     load();
   }, []);
 
+  const quickActions = [
+    { title: 'Start AR Tutor', icon: 'scan', color: colors.primary, route: '/scan' },
+    { title: 'Practice', icon: 'document-text', color: colors.accent, route: '/scan?mode=homework' },
+    { title: 'Community', icon: 'people', color: colors.secondary, route: '/community' },
+    { title: 'Study Groups', icon: 'people-circle', color: '#44FF88', route: '/study-groups' },
+  ];
+
   return (
     <View style={styles.container}>
-      <ParticleBackground />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.greeting}>Welcome back</Text>
-        <Text style={styles.headline}>What would you like to learn?</Text>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>{greeting}</Text>
+            <Text style={styles.headline}>What will you learn today?</Text>
+          </View>
+          <TouchableOpacity style={styles.avatarButton} onPress={() => router.push('/profile')}>
+            <View style={styles.avatar}>
+              <Ionicons name="person" size={24} color={colors.primary} />
+            </View>
+          </TouchableOpacity>
+        </View>
 
+        {streak > 0 && (
+          <GlassCard style={styles.streakCard}>
+            <View style={styles.streakRow}>
+              <View style={styles.streakLeft}>
+                <Ionicons name="flame" size={28} color={colors.warning} />
+                <View>
+                  <Text style={styles.streakNumber}>{streak} Day Streak</Text>
+                  <Text style={styles.streakSub}>Keep it going!</Text>
+                </View>
+              </View>
+              <View style={styles.streakDots}>
+                {[...Array(7)].map((_, i) => (
+                  <View key={i} style={[styles.streakDot, i < Math.min(streak, 7) && styles.streakDotActive]} />
+                ))}
+              </View>
+            </View>
+          </GlassCard>
+        )}
+
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionsGrid}>
           {quickActions.map((action, i) => (
             <TouchableOpacity key={i} style={styles.actionShell} onPress={() => router.push(action.route as any)}>
               <GlassCard style={styles.actionCard}>
                 <View style={[styles.actionIcon, { backgroundColor: action.color + '20' }]}>
-                  <Ionicons name={action.icon as any} size={24} color={action.color} />
+                  <Ionicons name={action.icon as any} size={28} color={action.color} />
                 </View>
                 <Text style={styles.actionTitle}>{action.title}</Text>
               </GlassCard>
@@ -58,38 +97,44 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        <Text style={styles.sectionTitle}>Recent Sessions</Text>
-        {loading ? (
-          <GlassCard style={styles.emptyCard}>
-            <ActivityIndicator size="small" color={colors.primary} />
+        <Text style={styles.sectionTitle}>Your Progress</Text>
+        <View style={styles.statsRow}>
+          <GlassCard style={styles.statCard}>
+            <Text style={styles.statValue}>{loading ? '-' : stats?.completedSessions ?? 0}</Text>
+            <Text style={styles.statLabel}>Completed</Text>
           </GlassCard>
-        ) : sessions.length === 0 ? (
-          <GlassCard style={styles.emptyCard}>
-            <Ionicons name="time-outline" size={32} color={colors.textTertiary} />
-            <Text style={styles.emptyText}>No sessions yet{'\n'}Scan your first problem to get started</Text>
+          <GlassCard style={styles.statCard}>
+            <Text style={styles.statValue}>{loading ? '-' : stats?.totalSessions ?? 0}</Text>
+            <Text style={styles.statLabel}>Total Sessions</Text>
           </GlassCard>
-        ) : (
-          <View style={styles.sessionList}>
-            {sessions.map((s: any) => (
-              <GlassCard key={s.$id} style={styles.sessionCard}>
-                <View style={styles.sessionRow}>
-                  <View style={[styles.sessionIcon, { backgroundColor: (s.problemType === 'math' ? colors.primary : colors.secondary) + '20' }]}>
-                    <Ionicons
-                      name={s.problemType === 'math' ? 'calculator-outline' : 'document-text-outline'}
-                      size={20}
-                      color={s.problemType === 'math' ? colors.primary : colors.secondary}
-                    />
+          <GlassCard style={styles.statCard}>
+            <Text style={styles.statValue}>{stats?.topTopics.length ?? 0}</Text>
+            <Text style={styles.statLabel}>Topics</Text>
+          </GlassCard>
+        </View>
+
+        {stats && stats.topTopics.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Top Topics</Text>
+            <GlassCard style={styles.topicsCard}>
+              {stats.topTopics.map(([topic, count], i) => (
+                <View key={topic} style={[styles.topicRow, i > 0 && styles.topicBorder]}>
+                  <View style={styles.topicLeft}>
+                    <View style={[styles.topicDot, { backgroundColor: colors.primary }]} />
+                    <Text style={styles.topicName}>{topic}</Text>
                   </View>
-                  <View style={styles.sessionInfo}>
-                    <Text style={styles.sessionTitle} numberOfLines={1}>{s.problemTitle || s.problemType || 'Problem'}</Text>
-                    <Text style={styles.sessionDate}>{new Date(s.createdAt).toLocaleDateString()}</Text>
-                  </View>
-                  <Ionicons name="checkmark-circle" size={20} color={s.status === 'completed' ? '#44FF88' : colors.textTertiary} />
+                  <Text style={styles.topicCount}>{count}x</Text>
                 </View>
-              </GlassCard>
-            ))}
-          </View>
+              ))}
+            </GlassCard>
+          </>
         )}
+
+        <AnimatedButton
+          title="Start AR Session"
+          onPress={() => router.push('/scan')}
+          style={styles.ctaButton}
+        />
       </ScrollView>
     </View>
   );
@@ -106,92 +151,168 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.lg,
     paddingTop: 60,
+    paddingBottom: 100,
+    gap: spacing.lg,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: spacing.md,
   },
   greeting: {
-    fontSize: 16,
+    fontSize: 14,
     color: colors.textSecondary,
-    marginBottom: spacing.xs,
+    marginBottom: 4,
   },
   headline: {
     fontSize: 28,
     fontWeight: '700',
     color: colors.text,
-    marginBottom: spacing.xl,
-    lineHeight: 36,
+    lineHeight: 34,
+  },
+  avatarButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakCard: {
+    padding: spacing.md,
+    backgroundColor: colors.warning + '15',
+    borderColor: colors.warning + '30',
+  },
+  streakRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  streakLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  streakNumber: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  streakSub: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  streakDots: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  streakDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.border,
+  },
+  streakDotActive: {
+    backgroundColor: colors.warning,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing.sm,
   },
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.md,
-    marginBottom: spacing.xl,
   },
   actionShell: {
     width: '47%',
-    aspectRatio: 1,
   },
   actionCard: {
-    flex: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
   },
   actionIcon: {
     width: 48,
     height: 48,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.sm,
   },
   actionTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.text,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  emptyCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.xl,
-    gap: spacing.md,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: colors.textTertiary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  sessionList: {
-    gap: spacing.sm,
-  },
-  sessionCard: {
-    padding: spacing.md,
-  },
-  sessionRow: {
+  statsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: spacing.md,
   },
-  sessionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sessionInfo: {
+  statCard: {
     flex: 1,
+    padding: spacing.md,
+    alignItems: 'center',
+    gap: spacing.xs,
   },
-  sessionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+  statValue: {
+    fontSize: 24,
+    fontWeight: '700',
     color: colors.text,
   },
-  sessionDate: {
+  statLabel: {
     fontSize: 12,
     color: colors.textTertiary,
-    marginTop: 2,
+    fontWeight: '600',
+  },
+  topicsCard: {
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  topicRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  topicBorder: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  topicLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  topicDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  topicName: {
+    fontSize: 14,
+    color: colors.text,
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  topicCount: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  ctaButton: {
+    marginTop: spacing.md,
   },
 });

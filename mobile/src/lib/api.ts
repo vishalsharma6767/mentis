@@ -219,4 +219,9 @@ export const api = {
     const res = await fetch(`${BASE_URL}/api/tutor/stats?userId=${encodeURIComponent(userId)}`);
     return res.json();
   },
+
+  async getStreak(userId: string): Promise<{ streak: number; lastActive: string | null }> {
+    const res = await fetch(`${BASE_URL}/api/tutor/streak?userId=${encodeURIComponent(userId)}`);
+    return res.json();
+  },
 };

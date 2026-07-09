@@ -8,10 +8,7 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="tutor" />
-      <Stack.Screen name="ar-tutor" />
-      <Stack.Screen name="ar-tutor-realtime" />
-      <Stack.Screen name="live-session" />
+        <Stack.Screen name="ar-tutor-realtime" />
       </Stack>
     </>
   );

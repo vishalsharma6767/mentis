@@ -3,3 +3,4 @@ export { AnimatedButton } from './AnimatedButton';
 export { OTPInput } from './OTPInput';
 export { ParticleBackground } from './ParticleBackground';
 export { NeonGradient } from './NeonGradient';
+export { ARPenCanvas } from './ARPenCanvas';
