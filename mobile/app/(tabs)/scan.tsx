@@ -204,13 +204,15 @@ export default function ARScanScreen() {
       stepIndexRef.current = i;
       setCurrentStep(i);
       const s = lessonSteps[i];
-      const msg = s.ar_annotation || s.instruction;
       drawStepOnCanvas(i + 1, s.instruction, s.explanation || s.answer);
       setMessages((m) => [...m, { role: 'teacher', text: `Step ${i + 1}: ${s.instruction}` }]);
-      await speak(msg || s.instruction);
+      const started = Date.now();
+      await speak(s.ar_annotation || s.instruction);
+      const elapsed = Date.now() - started;
+      const remaining = Math.max(0, STEP_DELAY - elapsed);
       if (i < lessonSteps.length - 1) {
         await new Promise((resolve) => {
-          stepTimerRef.current = setTimeout(resolve, STEP_DELAY);
+          stepTimerRef.current = setTimeout(resolve, remaining);
         });
       }
     }
@@ -219,10 +221,10 @@ export default function ARScanScreen() {
     setMessages((m) => [...m, { role: 'teacher', text: doubtMsg }]);
     await speak(doubtMsg);
     const timeout = setTimeout(async () => {
-      await finishAndExport();
+      if (phase !== 'finished') await finishAndExport();
     }, 15000);
     stepTimerRef.current = timeout;
-  }, [speak, drawStepOnCanvas]);
+  }, [speak, drawStepOnCanvas, phase, finishAndExport]);
 
   const recognizeAndTutor = useCallback(async () => {
     if (analyzingRef.current || loadingRef.current) return;
@@ -267,17 +269,18 @@ export default function ARScanScreen() {
     setPhase('finished');
     try {
       const canvasDataUrl = await canvasRef.current?.getDataUrl();
-      const stepsForPdf = steps.map((s) => ({
-        number: s.number,
-        instruction: s.instruction,
-        explanation: s.explanation,
-        answer: s.answer,
-      }));
+      const currentMessages = messagesRef.current;
+      const currentSteps = steps;
       const result = await api.createSessionPdf({
         title: `AR Tutor Session - ${selectedMode}`,
         problem: problemContent || 'Scanned problem',
-        steps: stepsForPdf,
-        transcript: messages.map((m) => ({ role: m.role, text: m.text })),
+        steps: currentSteps.map((s) => ({
+          number: s.number,
+          instruction: s.instruction,
+          explanation: s.explanation,
+          answer: s.answer,
+        })),
+        transcript: currentMessages.map((m) => ({ role: m.role, text: m.text })),
         penNotes: canvasDataUrl ? [{ text: 'AR Pen Drawing', x: 50, y: 10, color: colors.primary, imageData: canvasDataUrl }] : [],
       });
       if (Platform.OS === 'web') {
@@ -292,7 +295,7 @@ export default function ARScanScreen() {
       }
     } catch {}
     setTimeout(() => router.back(), 2000);
-  }, [steps, messages, router, problemContent, selectedMode, phase]);
+  }, [steps, router, problemContent, selectedMode, phase]);
 
   const toggleListen = useCallback(async () => {
     if (voice.isSpeaking) {

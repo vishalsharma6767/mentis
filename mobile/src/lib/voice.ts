@@ -80,11 +80,13 @@ export function useVoice() {
     if (isWeb) {
       if ('speechSynthesis' in window) {
         setIsSpeaking(true);
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.85;
-        utterance.onend = () => setIsSpeaking(false);
-        utterance.onerror = () => setIsSpeaking(false);
-        speechSynthesis.speak(utterance);
+        return new Promise<void>((resolve) => {
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.rate = 0.85;
+          utterance.onend = () => { setIsSpeaking(false); resolve(); };
+          utterance.onerror = () => { setIsSpeaking(false); resolve(); };
+          speechSynthesis.speak(utterance);
+        });
       }
       return;
     }
