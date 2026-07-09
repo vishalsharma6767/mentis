@@ -5,6 +5,7 @@ import { WebView } from 'react-native-webview';
 export interface ARPenCanvasHandle {
   drawText: (text: string, x: number, y: number, color?: string, fontSize?: number) => void;
   drawLine: (x1: number, y1: number, x2: number, y2: number, color?: string) => void;
+  drawArrow: (x1: number, y1: number, x2: number, y2: number, color?: string) => void;
   drawStepBox: (stepNum: number, instruction: string, explanation: string, x: number, y: number, color?: string) => void;
   clearAll: () => void;
   getDataUrl: () => Promise<string | null>;
@@ -196,6 +197,9 @@ export const ARPenCanvas = forwardRef<ARPenCanvasHandle, ARPenCanvasProps>(
       },
       drawLine(x1, y1, x2, y2, c) {
         inject(`window.drawLine(${x1}, ${y1}, ${x2}, ${y2}, '${c || color}', ${lineWidth}); true;`);
+      },
+      drawArrow(x1, y1, x2, y2, c) {
+        inject(`window.drawArrow(${x1}, ${y1}, ${x2}, ${y2}, '${c || color}'); true;`);
       },
       drawStepBox(stepNum, instruction, explanation, x, y, c) {
         const clr = c || color;

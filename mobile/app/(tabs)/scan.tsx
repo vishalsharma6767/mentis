@@ -10,6 +10,7 @@ import {
   Animated,
   Easing,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -59,6 +60,8 @@ export default function ARScanScreen() {
   const [steps, setSteps] = useState<Step[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const [showPen, setShowPen] = useState(true);
   const [speaking, setSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
@@ -198,6 +201,39 @@ export default function ARScanScreen() {
     }
   }, [connectWebSocket, step, level, selectedMode, problemContent]);
 
+  const finishAndExport = useCallback(async () => {
+    if (phase === 'finished') return;
+    setPhase('finished');
+    try {
+      const canvasDataUrl = await canvasRef.current?.getDataUrl();
+      const currentMessages = messagesRef.current;
+      const currentSteps = steps;
+      const result = await api.createSessionPdf({
+        title: `AR Tutor Session - ${selectedMode}`,
+        problem: problemContent || 'Scanned problem',
+        steps: currentSteps.map((s) => ({
+          number: s.number,
+          instruction: s.instruction,
+          explanation: s.explanation,
+          answer: s.answer,
+        })),
+        transcript: currentMessages.map((m) => ({ role: m.role, text: m.text })),
+        penNotes: canvasDataUrl ? [{ text: 'AR Pen Drawing', x: 50, y: 10, color: colors.primary, imageData: canvasDataUrl }] : [],
+      });
+      if (Platform.OS === 'web') {
+        const link = document.createElement('a');
+        link.href = `data:application/pdf;base64,${result.base64}`;
+        link.download = result.filename;
+        link.click();
+      } else {
+        const FileSystem = await import('expo-file-system');
+        const path = `${(FileSystem as any).documentDirectory}${result.filename}`;
+        await FileSystem.writeAsStringAsync(path, result.base64, { encoding: FileSystem.EncodingType.Base64 });
+      }
+    } catch {}
+    setTimeout(() => router.back(), 2000);
+  }, [steps, router, problemContent, selectedMode, phase, messagesRef]);
+
   const autoAdvanceSteps = useCallback(async (lessonSteps: Step[]) => {
     setPhase('tutoring');
     for (let i = 0; i < lessonSteps.length; i++) {
@@ -264,39 +300,6 @@ export default function ARScanScreen() {
     }
   }, [selectedMode, level, speak, uploadedImage, autoAdvanceSteps]);
 
-  const finishAndExport = useCallback(async () => {
-    if (phase === 'finished') return;
-    setPhase('finished');
-    try {
-      const canvasDataUrl = await canvasRef.current?.getDataUrl();
-      const currentMessages = messagesRef.current;
-      const currentSteps = steps;
-      const result = await api.createSessionPdf({
-        title: `AR Tutor Session - ${selectedMode}`,
-        problem: problemContent || 'Scanned problem',
-        steps: currentSteps.map((s) => ({
-          number: s.number,
-          instruction: s.instruction,
-          explanation: s.explanation,
-          answer: s.answer,
-        })),
-        transcript: currentMessages.map((m) => ({ role: m.role, text: m.text })),
-        penNotes: canvasDataUrl ? [{ text: 'AR Pen Drawing', x: 50, y: 10, color: colors.primary, imageData: canvasDataUrl }] : [],
-      });
-      if (Platform.OS === 'web') {
-        const link = document.createElement('a');
-        link.href = `data:application/pdf;base64,${result.base64}`;
-        link.download = result.filename;
-        link.click();
-      } else {
-        const FileSystem = await import('expo-file-system');
-        const path = `${(FileSystem as any).documentDirectory}${result.filename}`;
-        await FileSystem.writeAsStringAsync(path, result.base64, { encoding: FileSystem.EncodingType.Base64 });
-      }
-    } catch {}
-    setTimeout(() => router.back(), 2000);
-  }, [steps, router, problemContent, selectedMode, phase]);
-
   const toggleListen = useCallback(async () => {
     if (voice.isSpeaking) {
       voice.stopSpeaking();
@@ -348,16 +351,17 @@ export default function ARScanScreen() {
   }, []);
 
   const [permission, requestPermission] = useCameraPermissions();
+  const isWeb = Platform.OS === 'web';
 
-  if (!permission) {
+  const showCamera = isWeb ? false : (permission?.granted && !uploadedImage && phase === 'idle');
+
+  if (!isWeb && !permission) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
-
-  const showCamera = permission.granted && Platform.OS !== 'web' && !uploadedImage && phase === 'idle';
 
   return (
     <View style={styles.container}>
@@ -390,8 +394,7 @@ export default function ARScanScreen() {
                   <Text style={styles.scanningText}>{loading ? 'Preparing lesson...' : 'Scanning...'}</Text>
                 </View>
               )}
-              {/* eslint-disable-next-line jsx-a11y/alt-text */}
-              <img src={uploadedImage} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              <Image source={{ uri: uploadedImage }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
               {phase === 'idle' && (
                 <TouchableOpacity style={styles.retakeBtn} onPress={() => { setUploadedImage(null); canvasRef.current?.clearAll(); }}>
                   <Ionicons name="camera-outline" size={20} color={colors.text} />
