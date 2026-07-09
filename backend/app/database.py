@@ -37,6 +37,24 @@ COLLECTIONS = {
         {'key': 'type', 'type': 'string', 'size': 64, 'required': True},
         {'key': 'solution', 'type': 'string', 'size': 65536, 'required': False},
     ],
+    'discussions': [
+        {'key': 'userId', 'type': 'string', 'size': 255, 'required': True},
+        {'key': 'title', 'type': 'string', 'size': 512, 'required': True},
+        {'key': 'body', 'type': 'string', 'size': 8192, 'required': False},
+        {'key': 'tag', 'type': 'string', 'size': 64, 'required': False},
+        {'key': 'replies', 'type': 'integer', 'required': False},
+        {'key': 'likes', 'type': 'integer', 'required': False},
+        {'key': 'authorName', 'type': 'string', 'size': 255, 'required': False},
+        {'key': 'createdAt', 'type': 'datetime', 'required': False},
+    ],
+    'study_groups': [
+        {'key': 'name', 'type': 'string', 'size': 255, 'required': True},
+        {'key': 'subject', 'type': 'string', 'size': 128, 'required': True},
+        {'key': 'members', 'type': 'integer', 'required': False},
+        {'key': 'active', 'type': 'integer', 'required': False},
+        {'key': 'nextSession', 'type': 'string', 'size': 255, 'required': False},
+        {'key': 'createdAt', 'type': 'datetime', 'required': False},
+    ],
 }
 
 ATTR_CREATORS = {

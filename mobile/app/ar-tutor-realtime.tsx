@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   Platform,
   ActivityIndicator,
-  Dimensions,
   Alert,
   Animated,
   Easing,
@@ -18,7 +17,7 @@ import * as DeviceMotion from 'expo-sensors';
 import { colors, spacing, borderRadius } from '../src/theme';
 import { GlassCard } from '../src/components';
 import { ARPenCanvas } from '../src/components/ARPenCanvas';
-import { api, LearningMode } from '../src/lib/api';
+import { api, LearningMode, BASE_URL } from '../src/lib/api';
 import { useVoice } from '../src/lib/voice';
 
 interface Step {
@@ -31,6 +30,11 @@ interface Step {
   focus?: string;
 }
 
+interface Message {
+  role: 'student' | 'teacher';
+  text: string;
+}
+
 interface PenNote {
   text: string;
   x: number;
@@ -38,7 +42,6 @@ interface PenNote {
   color: string;
 }
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const FRAME_INTERVAL = 4000;
 
 export default function ARTutorRealtimeScreen() {
@@ -57,30 +60,24 @@ export default function ARTutorRealtimeScreen() {
   const [sessionActive, setSessionActive] = useState(false);
   const [steps, setSteps] = useState<Step[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
-  const [messages, setMessages] = useState<{ role: 'student' | 'teacher'; text: string }[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [penNotes, setPenNotes] = useState<PenNote[]>([]);
   const [showPen, setShowPen] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
   const [arEnabled, setArEnabled] = useState(true);
+  const [streamingText, setStreamingText] = useState('');
   const speakAnim = useRef(new Animated.Value(0)).current;
   const cameraRef = useRef<CameraView>(null);
   const frameTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const motionSub = useRef<{ remove: () => void } | null>(null);
   const voice = useVoice();
+  const wsRef = useRef<WebSocket | null>(null);
 
   const [motion, setMotion] = useState({ x: 0, y: 0, z: 0 });
   const step = steps[currentStep];
   const progress = steps.length ? Math.round(((currentStep + 1) / steps.length) * 100) : 0;
-
-  const rotateStyle = {
-    transform: [
-      { perspective: 800 },
-      { rotateY: motion.x * 0.08 },
-      { rotateX: -motion.y * 0.06 },
-    ],
-  };
 
   const floatingStyle = {
     transform: [
@@ -99,18 +96,20 @@ export default function ARTutorRealtimeScreen() {
   useEffect(() => {
     let sub: { remove: () => void } | null = null;
     (async () => {
-      const available = await DeviceMotion.isAvailableAsync();
-      if (available) {
-        sub = DeviceMotion.addListener((data: any) => {
-          const rot = data.rotation;
-          setMotion({
-            x: rot?.beta ?? 0,
-            y: rot?.gamma ?? 0,
-            z: rot?.alpha ?? 0,
+      try {
+        const available = await DeviceMotion.isAvailableAsync();
+        if (available) {
+          sub = DeviceMotion.addListener((data: any) => {
+            const rot = data.rotation;
+            setMotion({
+              x: rot?.beta ?? 0,
+              y: rot?.gamma ?? 0,
+              z: rot?.alpha ?? 0,
+            });
           });
-        });
-        await DeviceMotion.setUpdateIntervalAsync(100);
-      }
+          await DeviceMotion.setUpdateIntervalAsync(100);
+        }
+      } catch {}
     })();
     motionSub.current = sub;
     return () => { sub?.remove(); };
@@ -128,6 +127,67 @@ export default function ARTutorRealtimeScreen() {
       speakAnim.setValue(0);
     }
   }, [speaking]);
+
+  const connectWebSocket = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    try {
+      const wsUrl = `${BASE_URL.replace('http', 'ws')}/api/tutor/ws/tutor`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ mode: selectedMode, level, content: content ?? '' }));
+      };
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'chunk') {
+            setStreamingText((prev) => prev + data.text);
+          } else if (data.type === 'done') {
+            const full = data.text || streamingText;
+            if (full) {
+              setMessages((m) => [...m, { role: 'teacher', text: full }]);
+              setStreamingText('');
+            }
+          }
+        } catch {}
+      };
+      ws.onerror = () => {};
+      ws.onclose = () => {};
+    } catch {}
+  }, [selectedMode, level, content, streamingText]);
+
+  const sendVoiceMessage = useCallback(async (text: string) => {
+    if (!text) return;
+    setMessages((m) => [...m, { role: 'student', text }]);
+    setStreamingText('');
+    connectWebSocket();
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ text }));
+    } else {
+      try {
+        const answer = await api.askDoubt({
+          content: content ?? '',
+          question: text,
+          current: step,
+          level,
+          mode: selectedMode,
+        });
+        setMessages((m) => [...m, { role: 'teacher', text: `${answer.reply} ${answer.follow_up}`.trim() }]);
+        setPenNotes((n) => [
+          ...n,
+          {
+            text: answer.pen_annotation || 'Check this',
+            x: 20 + Math.random() * 40,
+            y: 20 + Math.random() * 40,
+            color: colors.accent,
+          },
+        ]);
+      } catch {
+        setMessages((m) => [...m, { role: 'teacher', text: 'Tell me which step feels unclear.' }]);
+      }
+    }
+  }, [connectWebSocket, content, step, level, selectedMode]);
 
   useEffect(() => {
     if (!sessionActive || !content) return;
@@ -192,25 +252,7 @@ export default function ARTutorRealtimeScreen() {
         try {
           const text = await voice.transcribeAudio(uri);
           if (text) {
-            setMessages((m) => [...m, { role: 'student', text }]);
-            const answer = await api.askDoubt({
-              content: content ?? '',
-              question: text,
-              current: step,
-              level,
-              mode: selectedMode,
-            });
-            setMessages((m) => [...m, { role: 'teacher', text: `${answer.reply} ${answer.follow_up}`.trim() }]);
-            setPenNotes((n) => [
-              ...n,
-              {
-                text: answer.pen_annotation || 'Check this',
-                x: 20 + Math.random() * 40,
-                y: 20 + Math.random() * 40,
-                color: colors.accent,
-              },
-            ]);
-            speak(answer.reply);
+            await sendVoiceMessage(text);
           }
         } finally {
           setListening(false);
@@ -219,7 +261,7 @@ export default function ARTutorRealtimeScreen() {
     } else {
       await voice.startRecording();
     }
-  }, [voice, step, content, level, selectedMode, speak]);
+  }, [voice, sendVoiceMessage]);
 
   const writeStep = useCallback(() => {
     if (!step) return;
@@ -306,6 +348,13 @@ export default function ARTutorRealtimeScreen() {
     }
   }, [selectedMode, level, speak]);
 
+  useEffect(() => {
+    return () => {
+      if (frameTimerRef.current) clearInterval(frameTimerRef.current);
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, []);
+
   if (loading && !sessionActive) {
     return (
       <View style={styles.loadingContainer}>
@@ -347,7 +396,7 @@ export default function ARTutorRealtimeScreen() {
         </View>
 
         {messages.slice(-2).map((msg, i) => (
-          <Animated.View key={i} style={[styles.messageOverlay, floatingStyle, { top: 120 + i * 80 }]}>
+          <View key={i} style={[styles.messageOverlay, floatingStyle, { top: 120 + i * 80 }]}>
             <GlassCard style={styles.messageCard}>
               <View style={[styles.messageInner, msg.role === 'student' ? styles.studentInner : styles.teacherInner]}>
                 <Text style={[styles.messageRole, { color: msg.role === 'student' ? colors.accent : colors.primary }]}>
@@ -356,8 +405,18 @@ export default function ARTutorRealtimeScreen() {
                 <Text style={styles.messageText} numberOfLines={2}>{msg.text}</Text>
               </View>
             </GlassCard>
-          </Animated.View>
+          </View>
         ))}
+        {streamingText ? (
+          <View style={[styles.messageOverlay, floatingStyle, { top: 280 }]}>
+            <GlassCard style={styles.messageCard}>
+              <View style={[styles.messageInner, styles.teacherInner]}>
+                <Text style={[styles.messageRole, { color: colors.primary }]}>Mentis</Text>
+                <Text style={styles.messageText}>{streamingText}</Text>
+              </View>
+            </GlassCard>
+          </View>
+        ) : null}
       </View>
 
       <ARPenCanvas color={colors.primary} lineWidth={3} visible={showPen} />

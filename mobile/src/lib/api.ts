@@ -224,4 +224,31 @@ export const api = {
     const res = await fetch(`${BASE_URL}/api/tutor/streak?userId=${encodeURIComponent(userId)}`);
     return res.json();
   },
+
+  async getDiscussions(tag?: string): Promise<{ discussions: any[] }> {
+    const url = tag
+      ? `${BASE_URL}/api/tutor/discussions?tag=${encodeURIComponent(tag)}`
+      : `${BASE_URL}/api/tutor/discussions`;
+    const res = await fetch(url);
+    return res.json();
+  },
+
+  async createDiscussion(data: { userId: string; title: string; body?: string; tag?: string; authorName?: string }): Promise<{ id: string }> {
+    const formData = new FormData();
+    Object.entries(data).forEach(([k, v]) => formData.append(k, v));
+    const res = await fetch(`${BASE_URL}/api/tutor/discussions`, { method: 'POST', body: formData });
+    return res.json();
+  },
+
+  async getStudyGroups(): Promise<{ groups: any[] }> {
+    const res = await fetch(`${BASE_URL}/api/tutor/study-groups`);
+    return res.json();
+  },
+
+  async createStudyGroup(data: { name: string; subject: string; members?: number; active?: number; nextSession?: string }): Promise<{ id: string }> {
+    const formData = new FormData();
+    Object.entries(data).forEach(([k, v]) => formData.append(k, String(v)));
+    const res = await fetch(`${BASE_URL}/api/tutor/study-groups`, { method: 'POST', body: formData });
+    return res.json();
+  },
 };

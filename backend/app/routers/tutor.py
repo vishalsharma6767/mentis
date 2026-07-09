@@ -333,3 +333,78 @@ async def get_streak(userId: str = Query(...)):
         else:
             break
     return {'streak': streak, 'lastActive': unique_dates[0].isoformat()}
+
+
+@router.get('/discussions')
+async def list_discussions(tag: str = Query('')):
+    from appwrite.query import Query as AppwriteQuery
+    queries = [AppwriteQuery.order_desc('createdAt'), AppwriteQuery.limit(50)]
+    if tag:
+        queries.append(AppwriteQuery.equal('tag', tag))
+    docs = databases.list_documents(
+        database_id=DATABASE_ID,
+        collection_id='discussions',
+        queries=queries,
+    )
+    return {'discussions': docs.documents}
+
+
+@router.post('/discussions')
+async def create_discussion(
+    userId: str = Form(...),
+    title: str = Form(...),
+    body: str = Form(''),
+    tag: str = Form(''),
+    authorName: str = Form(''),
+):
+    doc = databases.create_document(
+        database_id=DATABASE_ID,
+        collection_id='discussions',
+        document_id='unique()',
+        data={
+            'userId': userId,
+            'title': title,
+            'body': body,
+            'tag': tag,
+            'replies': 0,
+            'likes': 0,
+            'authorName': authorName,
+            'createdAt': datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    return {'id': doc['$id']}
+
+
+@router.get('/study-groups')
+async def list_study_groups():
+    from appwrite.query import Query as AppwriteQuery
+    docs = databases.list_documents(
+        database_id=DATABASE_ID,
+        collection_id='study_groups',
+        queries=[AppwriteQuery.order_desc('createdAt')],
+    )
+    return {'groups': docs.documents}
+
+
+@router.post('/study-groups')
+async def create_study_group(
+    name: str = Form(...),
+    subject: str = Form(...),
+    members: int = Form(0),
+    active: int = Form(0),
+    nextSession: str = Form(''),
+):
+    doc = databases.create_document(
+        database_id=DATABASE_ID,
+        collection_id='study_groups',
+        document_id='unique()',
+        data={
+            'name': name,
+            'subject': subject,
+            'members': members,
+            'active': active,
+            'nextSession': nextSession,
+            'createdAt': datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    return {'id': doc['$id']}
