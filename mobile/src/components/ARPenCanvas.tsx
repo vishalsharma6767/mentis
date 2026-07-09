@@ -58,25 +58,33 @@ function ensureScroll(){
 }
 
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
-function drawChar(ch,x,y,clr){ctx.fillStyle=clr||pc;ctx.font='24px \"Times New Roman\",serif';ctx.textBaseline='top';var w=ctx.measureText(ch).width||cw;ctx.fillText(ch,x+((Math.random()-0.5)*1.2),y+((Math.random()-0.5)*1.2));return w}
+function drawChar(ch,x,y,clr){ctx.fillStyle=clr||pc;ctx.font='bold 22px \"Segoe UI\",\"Nunito\",system-ui,sans-serif';ctx.textBaseline='top';var w=ctx.measureText(ch).width||cw;ctx.fillText(ch,x+((Math.random()-0.5)*1.2),y+((Math.random()-0.5)*1.2));return w}
 
 window.writeText=async function(t,clr,nl){
   var col=clr||pc;
   if(nl&&t){px=40;py+=lh}
   if(!t)return;
   var dpr=window.devicePixelRatio||1;
-  for(var i=0;i<t.length;i++){
-    var ch=t[i];
-    if(ch===' '){px+=cw*0.6;continue}
-    var w=drawChar(ch,px,py,col);
-    px+=w+1;
-    // Save canvas pixels, draw cursor, sleep, restore (cursor dot never stays)
-    var sx=Math.round((px-14)*dpr),sy=Math.round((py-14)*dpr),sw=Math.ceil(34*dpr),sh=Math.ceil(34*dpr);
-    var saved=ctx.getImageData(sx,sy,sw,sh);
-    ctx.beginPath();ctx.arc(px,py,ps+3,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();
-    ctx.beginPath();ctx.arc(px,py,ps+6,0,Math.PI*2);ctx.strokeStyle=col+'60';ctx.lineWidth=1.5;ctx.stroke();
-    await sleep(25);
-    ctx.putImageData(saved,sx,sy);
+  var maxW=window.innerWidth-80;
+  var words=t.split(' ');
+  for(var wi=0;wi<words.length;wi++){
+    var word=words[wi];
+    if(word.length===0)continue;
+    var wordW=0;
+    for(var j=0;j<word.length;j++)wordW+=(ctx.measureText(word[j]).width||cw)+1;
+    var spaceW=(wi>0)?(ctx.measureText(' ').width||cw*0.6):0;
+    if(px+spaceW+wordW>maxW&&px>60){px=40;py+=lh}
+    else if(wi>0)px+=spaceW;
+    for(var j=0;j<word.length;j++){
+      var ch=word[j],w=drawChar(ch,px,py,col);
+      px+=w+1;
+      var sx=Math.round((px-14)*dpr),sy=Math.round((py-14)*dpr),sw=Math.ceil(34*dpr),sh=Math.ceil(34*dpr);
+      var saved=ctx.getImageData(sx,sy,sw,sh);
+      ctx.beginPath();ctx.arc(px,py,ps+3,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();
+      ctx.beginPath();ctx.arc(px,py,ps+6,0,Math.PI*2);ctx.strokeStyle=col+'60';ctx.lineWidth=1.5;ctx.stroke();
+      await sleep(25);
+      ctx.putImageData(saved,sx,sy);
+    }
   }
   ensureScroll();
 };
