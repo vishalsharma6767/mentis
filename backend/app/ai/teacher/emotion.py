@@ -2,18 +2,18 @@
 
 Detects student affect (confusion, frustration, boredom, engagement,
 confidence) from text inputs — their answers, questions, and messages.
-Uses lightweight heuristics first, then LLM for nuanced cases.
+Uses lightweight heuristics first, then AIGateway for nuanced cases.
 """
+
+from __future__ import annotations
 
 import re
 from typing import Optional
 
-from app.ai.teacher.reasoner import LLMProvider, reason
+from app.ai.gateway import AIGateway, LLMProvider
 from app.core.logger import get_logger
 
 log = get_logger(__name__)
-
-# ── Emotion categories ─────────────────────────────────────────────────
 
 
 class EmotionState:
@@ -27,12 +27,10 @@ class EmotionState:
     NEUTRAL = 'neutral'
 
 
-# ── Keyword-based heuristic markers ────────────────────────────────────
-
 _CONFUSION_MARKERS = [
     'samajh nahi', 'nhi aaya', 'kya matlab', 'explain again',
     'confuse', 'confusing', 'difficult', 'hard', 'kya hai ye',
-    'don\'t understand', 'not clear', '???', 'what?', 'huh',
+    "don't understand", 'not clear', '???', 'what?', 'huh',
 ]
 
 _FRUSTRATION_MARKERS = [
@@ -67,11 +65,17 @@ _CURIOSITY_MARKERS = [
     'curious', 'wonder', 'interesting thought',
 ]
 
+EMOTION_LABELS = '|'.join([
+    EmotionState.CONFUSED, EmotionState.FRUSTRATED, EmotionState.BORED,
+    EmotionState.ENGAGED, EmotionState.CONFIDENT, EmotionState.ANXIOUS,
+    EmotionState.CURIOUS, EmotionState.NEUTRAL,
+])
+
 
 def _heuristic_emotion(text: str) -> tuple[str, float]:
     """Detect emotion using keyword matching.
 
-    Returns (emotion, confidence).
+    Returns (emotion_label, confidence) where confidence is 0.0-1.0.
     """
     lower = text.lower()
 
@@ -81,13 +85,12 @@ def _heuristic_emotion(text: str) -> tuple[str, float]:
             return 0.0
         return min(matches / max(len(lower.split()), 1) * 10, 1.0)
 
-    # Prioritise strongest signal
     candidates = [
         (EmotionState.FRUSTRATED, _FRUSTRATION_MARKERS),
         (EmotionState.CONFUSED, _CONFUSION_MARKERS),
         (EmotionState.ANXIOUS, _ANXIETY_MARKERS),
         (EmotionState.CURIOUS, _CURIOSITY_MARKERS),
-        (EmotionState.CONFIDENT, _ENGAGEMENT_MARKERS),  # engaged → confident
+        (EmotionState.CONFIDENT, _ENGAGEMENT_MARKERS),
         (EmotionState.BORED, _BOREDOM_MARKERS),
     ]
 
@@ -99,7 +102,6 @@ def _heuristic_emotion(text: str) -> tuple[str, float]:
             best_score = s
             best_emotion = emotion
 
-    # Check confidence level
     high_conf = sum(1 for m in _CONFIDENCE_MARKERS['high'] if m in lower)
     low_conf = sum(1 for m in _CONFIDENCE_MARKERS['low'] if m in lower)
     if high_conf > low_conf and best_score < 0.3:
@@ -113,38 +115,53 @@ def _heuristic_emotion(text: str) -> tuple[str, float]:
 async def detect_emotion(
     text: str,
     use_llm: bool = False,
-    provider: str = LLMProvider.GROQ,
+    provider: Optional[LLMProvider] = None,
 ) -> tuple[str, float]:
     """Detect student emotion from text.
 
+    Uses fast keyword heuristics first. Falls back to AIGateway for
+    deeper analysis when heuristics are uncertain.
+
     Args:
         text: The student's message.
-        use_llm: If True, uses LLM for deeper analysis when heuristics are uncertain.
-        provider: LLM provider for deep analysis.
+        use_llm: If True, uses LLM for deep analysis when heuristics
+                 are uncertain (confidence < 0.4).
+        provider: Optional LLM provider override.
 
     Returns:
         (emotion_label, confidence_score).
     """
+    if not text or not text.strip():
+        return EmotionState.NEUTRAL, 0.0
+
     emotion, confidence = _heuristic_emotion(text)
 
     if use_llm and confidence < 0.4:
         try:
-            result = await reason(
+            gateway = await AIGateway.get_instance()
+            result = await gateway.execute(
                 messages=[
                     {
                         'role': 'system',
-                        'content': 'You detect student emotion from text. '
-                                   'Respond with JSON: {"emotion": "confused|frustrated|bored|engaged|confident|anxious|curious|neutral", "confidence": 0.0-1.0}',
+                        'content': (
+                            f'You detect student emotion from text. '
+                            f'Respond with JSON: {{"emotion": "{EMOTION_LABELS}", '
+                            f'"confidence": 0.0-1.0}}'
+                        ),
                     },
-                    {'role': 'user', 'content': f'Student says: "{text}"\n\nWhat emotion?'},
+                    {'role': 'user', 'content': f'Student says: "{text[:500]}"\n\nWhat emotion?'},
                 ],
                 provider=provider,
                 expect_json=True,
+                max_tokens=128,
+                temperature=0.3,
             )
-            emotion = result.get('emotion', emotion)
-            confidence = float(result.get('confidence', confidence))
+            import json
+            parsed = json.loads(result.text)
+            emotion = str(parsed.get('emotion', emotion))
+            confidence = float(parsed.get('confidence', confidence))
         except Exception:
-            pass
+            log.debug('emotion_llm_fallback_skipped', heuristics_emotion=emotion)
 
     return emotion, confidence
 

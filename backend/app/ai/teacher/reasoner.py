@@ -1,4 +1,8 @@
-"""Unified LLM reasoner for all agents.
+"""DEPRECATED — Unified LLM reasoner for all agents.
+
+WARNING: This module is deprecated. All agents should use
+``app.ai.gateway.AIGateway`` instead. This file exists only for
+backward compatibility with the old ``brain.py``.
 
 Supports multiple providers (Groq, OpenRouter, Gemini) with automatic
 fallback, retry logic, JSON extraction, and streaming. Every agent in

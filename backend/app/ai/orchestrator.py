@@ -25,13 +25,12 @@ from app.ai.teacher.dialogue import DialogueManager
 from app.ai.teacher.emotion import detect_emotion
 from app.ai.teacher.personality import TeacherPersonality
 from app.ai.teacher.planner import PlannerAgent
-from app.ai.teacher.prompts import teacher_agent_prompt as make_teacher_prompt
 from app.ai.teacher.responder import ResponseComposer
+from app.ai.teacher.teacher import TeacherAgent
 from app.ai.teacher.schemas import (
     ARPlan,
     CoachingDecision,
     CriticOutput,
-    MemoryUpdate,
     PlannerOutput,
     SpeechPlan,
     TeacherOutput,
@@ -40,7 +39,7 @@ from app.ai.teacher.schemas import (
 )
 from app.ai.teacher.state_machine import TeacherState, TeacherStateMachine
 from app.core.constants import ConfidenceLevel, TeachingLanguage
-from app.core.events import Event, EventBus, EventType
+from app.core.events import EventBus, EventType
 from app.core.exceptions import AgentExecutionError
 from app.core.logger import get_logger
 
@@ -73,12 +72,11 @@ class TeacherOrchestrator:
         self.dialogue = DialogueManager()
         self.coach = CoachAgent(self.personality)
         self.planner = PlannerAgent(self.personality)
+        self.teacher = TeacherAgent(self.personality)
         self.critic = CriticAgent()
         self.responder = ResponseComposer()
         self._gateway: Optional[AIGateway] = None
         self.bus = EventBus.get_instance()
-
-        self._teacher_prompt = make_teacher_prompt(self.personality)
 
         # Register the state machine as an event source
         self.state.on_transition(self._on_state_transition)
@@ -239,22 +237,21 @@ class TeacherOrchestrator:
         revision_hint: str = '',
     ) -> Optional[TeacherOutput]:
         try:
-            messages = [{'role': 'system', 'content': self._teacher_prompt}]
-            user_content = self._build_teacher_prompt(
-                plan, vision, context, student_message, language, emotion, revision_hint,
+            student_ctx = self._build_student_context(context)
+            step_index = self.dialogue.current_step
+            dialogue_ctx = self.dialogue.to_system_context()
+            return await self.teacher.teach(
+                step_index=step_index,
+                plan=plan,
+                vision=vision,
+                student=student_ctx,
+                student_message=student_message,
+                emotion=emotion,
+                language=language,
+                dialogue_context=dialogue_ctx,
+                revision_hint=revision_hint,
+                provider=provider or LLMProvider.GROQ,
             )
-            messages.append({'role': 'user', 'content': user_content})
-
-            if self._gateway is None:
-                self._gateway = await AIGateway.get_instance()
-            response = await self._gateway.execute(
-                messages=messages,
-                provider=provider,
-                expect_json=True,
-                max_tokens=4096,
-                temperature=0.7,
-            )
-            return self._parse_teacher_result(response.text, plan, vision, context, language)
         except Exception as exc:
             log.error('teacher_agent_failed', error=str(exc))
             return None
@@ -314,80 +311,6 @@ class TeacherOrchestrator:
             )
 
     # ── Helpers ────────────────────────────────────────────────────────
-
-    def _build_teacher_prompt(
-        self,
-        plan: Optional[PlannerOutput],
-        vision: VisionOutput,
-        context: UnifiedStudentContext,
-        student_message: str,
-        language: TeachingLanguage,
-        emotion: str,
-        revision_hint: str,
-    ) -> str:
-        parts = [f'Student context:\n{context.format_for_agent()}']
-
-        if plan and plan.lesson_plan:
-            steps_text = '\n'.join(
-                f'  Step {i + 1}: [{s.phase}] {s.title} — {s.explanation[:100]}...'
-                for i, s in enumerate(plan.lesson_plan.steps)
-            )
-            parts.append(f'\nLesson plan:\nStrategy: {plan.teaching_strategy}')
-            parts.append(f'Adaptations: {", ".join(plan.adaptations)}')
-            parts.append(f'Steps:\n{steps_text}')
-
-        parts.append(f'\nProblem: {vision.raw_text}')
-        parts.append(f'Student emotion: {emotion}')
-        parts.append(f'Language: {language.value}')
-        parts.append(f'Student message: {student_message}')
-
-        if revision_hint:
-            parts.append(f'\nRevision needed: {revision_hint}')
-
-        parts.append(f'\nPrevious dialogue:\n{self.dialogue.to_system_context()}')
-        parts.append(f'\nNow teach this step-by-step in {language.value}.')
-        parts.append('Never dump answers. Teach like an experienced Indian classroom teacher.')
-
-        return '\n'.join(parts)
-
-    def _parse_teacher_result(
-        self,
-        raw_json: str,
-        plan: Optional[PlannerOutput],
-        vision: VisionOutput,
-        context: UnifiedStudentContext,
-        language: TeachingLanguage,
-    ) -> TeacherOutput:
-        import json
-        try:
-            result = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
-        except (json.JSONDecodeError, TypeError):
-            result = {}
-
-        from app.ai.teacher.schemas import TeacherResponse as TR
-
-        response = TR(
-            explanation=result.get('explanation', ''),
-            key_points=result.get('key_points', []),
-            checkpoints=result.get('checkpoints', []),
-            examples=result.get('examples', []),
-            analogy=result.get('analogy', ''),
-            language_hint=result.get('language_hint', language.value),
-            board_actions=result.get('board_actions', []),
-            memory_update=MemoryUpdate(
-                topics_covered=result.get('topics_covered', vision.topics),
-                topics_struggled=result.get('topics_struggled', []),
-            ),
-        )
-
-        return TeacherOutput(
-            response=response,
-            lesson_plan=plan.lesson_plan if plan else None,
-            subject=vision.subject,
-            topic=plan.lesson_plan.topic if plan and plan.lesson_plan else ', '.join(vision.topics) if vision.topics else '',
-            student_level=context.profile.level,
-            language=language,
-        )
 
     @staticmethod
     def _build_student_context(context: UnifiedStudentContext) -> 'StudentContext':
