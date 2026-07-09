@@ -17,7 +17,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as DeviceMotion from 'expo-sensors';
 import { colors, spacing, borderRadius } from '../../src/theme';
 import { GlassCard } from '../../src/components';
-import { ARPenCanvas } from '../../src/components/ARPenCanvas';
+import { ARPenCanvas, ARPenCanvasHandle } from '../../src/components/ARPenCanvas';
 import { api, LearningMode, BASE_URL } from '../../src/lib/api';
 import { useVoice } from '../../src/lib/voice';
 
@@ -36,14 +36,8 @@ interface Message {
   text: string;
 }
 
-interface PenNote {
-  text: string;
-  x: number;
-  y: number;
-  color: string;
-}
-
 const SCAN_INTERVAL = 4000;
+const STEP_DELAY = 6000;
 const MODES: { id: LearningMode; title: string; icon: keyof typeof Ionicons.glyphMap; hint: string }[] = [
   { id: 'math', title: 'Math', icon: 'calculator', hint: 'Equations, graphs, word problems' },
   { id: 'science', title: 'Science', icon: 'flask', hint: 'Diagrams, lab equipment, circuits' },
@@ -61,45 +55,38 @@ export default function ARScanScreen() {
   const [sessionActive, setSessionActive] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [level, setLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('intermediate');
+  const [level] = useState<'beginner' | 'intermediate' | 'advanced'>('intermediate');
   const [steps, setSteps] = useState<Step[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [penNotes, setPenNotes] = useState<PenNote[]>([]);
-  const [showPen, setShowPen] = useState(false);
+  const [showPen, setShowPen] = useState(true);
   const [speaking, setSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
-  const [arEnabled, setArEnabled] = useState(true);
   const [streamingText, setStreamingText] = useState('');
   const [motion, setMotion] = useState({ x: 0, y: 0, z: 0 });
   const [problemContent, setProblemContent] = useState('');
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [phase, setPhase] = useState<'idle' | 'scanning' | 'tutoring' | 'doubts' | 'finished'>('idle');
   const speakAnim = useRef(new Animated.Value(0)).current;
-  const scanAnim = useRef(new Animated.Value(0)).current;
   const cameraRef = useRef<CameraView>(null);
   const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const motionSub = useRef<{ remove: () => void } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const analyzingRef = useRef(false);
   const loadingRef = useRef(false);
+  const canvasRef = useRef<ARPenCanvasHandle>(null);
   const streamingTextRef = useRef('');
-  const messagesRef = useRef<Message[]>([]);
+  const stepIndexRef = useRef(0);
   const voice = useVoice();
 
-  const step = steps[currentStep];
-  const progress = steps.length ? Math.round(((currentStep + 1) / steps.length) * 100) : 0;
+  const step = steps[stepIndexRef.current];
+  const progress = steps.length ? Math.round(((stepIndexRef.current + 1) / steps.length) * 100) : 0;
 
   const floatingStyle = {
     transform: [
       { translateX: motion.x * 6 },
       { translateY: motion.y * 4 },
-    ],
-  };
-
-  const annotationStyle = {
-    transform: [
-      { translateX: motion.x * 10 },
-      { translateY: motion.y * 8 + 40 },
     ],
   };
 
@@ -138,15 +125,6 @@ export default function ARScanScreen() {
     }
   }, [speaking]);
 
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(scanAnim, { toValue: 1, duration: 2000, easing: Easing.linear, useNativeDriver: true }),
-        Animated.timing(scanAnim, { toValue: 0, duration: 2000, easing: Easing.linear, useNativeDriver: true }),
-      ]),
-    ).start();
-  }, []);
-
   const speak = useCallback(async (text: string) => {
     setSpeaking(true);
     try {
@@ -154,6 +132,16 @@ export default function ARScanScreen() {
     } catch {}
     setSpeaking(false);
   }, [voice]);
+
+  const drawStepOnCanvas = useCallback((stepNum: number, instruction: string, explanation: string) => {
+    if (!canvasRef.current) return;
+    const col = colors.primary;
+    const yBase = 40 + (stepNum - 1) * 90;
+    canvasRef.current.drawStepBox(stepNum, instruction, explanation, 30, yBase, col);
+    if (stepNum > 1) {
+      canvasRef.current.drawArrow(160, yBase - 10, 160, yBase + 5, col);
+    }
+  }, []);
 
   const connectWebSocket = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -173,8 +161,7 @@ export default function ARScanScreen() {
           } else if (data.type === 'done') {
             const full = data.text || streamingTextRef.current;
             if (full) {
-              messagesRef.current = [...messagesRef.current, { role: 'teacher', text: full }];
-              setMessages(messagesRef.current);
+              setMessages((m) => [...m, { role: 'teacher', text: full }]);
               setStreamingText('');
               streamingTextRef.current = '';
             }
@@ -188,8 +175,7 @@ export default function ARScanScreen() {
 
   const sendVoiceMessage = useCallback(async (text: string) => {
     if (!text) return;
-    messagesRef.current = [...messagesRef.current, { role: 'student', text }];
-    setMessages(messagesRef.current);
+    setMessages((m) => [...m, { role: 'student', text }]);
     setStreamingText('');
     streamingTextRef.current = '';
     connectWebSocket();
@@ -205,28 +191,44 @@ export default function ARScanScreen() {
           level,
           mode: selectedMode,
         });
-        messagesRef.current = [...messagesRef.current, { role: 'teacher', text: `${answer.reply} ${answer.follow_up}`.trim() }];
-        setMessages(messagesRef.current);
-        setPenNotes((n) => [
-          ...n,
-          {
-            text: answer.pen_annotation || 'Check this',
-            x: 20 + Math.random() * 40,
-            y: 20 + Math.random() * 40,
-            color: colors.accent,
-          },
-        ]);
+        setMessages((m) => [...m, { role: 'teacher', text: `${answer.reply} ${answer.follow_up}`.trim() }]);
       } catch {
-        messagesRef.current = [...messagesRef.current, { role: 'teacher', text: 'Tell me which step feels unclear.' }];
-        setMessages(messagesRef.current);
+        setMessages((m) => [...m, { role: 'teacher', text: 'Tell me which step feels unclear.' }]);
       }
     }
   }, [connectWebSocket, step, level, selectedMode, problemContent]);
+
+  const autoAdvanceSteps = useCallback(async (lessonSteps: Step[]) => {
+    setPhase('tutoring');
+    for (let i = 0; i < lessonSteps.length; i++) {
+      stepIndexRef.current = i;
+      setCurrentStep(i);
+      const s = lessonSteps[i];
+      const msg = s.ar_annotation || s.instruction;
+      drawStepOnCanvas(i + 1, s.instruction, s.explanation || s.answer);
+      setMessages((m) => [...m, { role: 'teacher', text: `Step ${i + 1}: ${s.instruction}` }]);
+      await speak(msg || s.instruction);
+      if (i < lessonSteps.length - 1) {
+        await new Promise((resolve) => {
+          stepTimerRef.current = setTimeout(resolve, STEP_DELAY);
+        });
+      }
+    }
+    setPhase('doubts');
+    const doubtMsg = 'I have finished explaining the solution. Do you have any doubts? You can ask me by tapping the mic button. If not, I will save your PDF.';
+    setMessages((m) => [...m, { role: 'teacher', text: doubtMsg }]);
+    await speak(doubtMsg);
+    const timeout = setTimeout(async () => {
+      await finishAndExport();
+    }, 15000);
+    stepTimerRef.current = timeout;
+  }, [speak, drawStepOnCanvas]);
 
   const recognizeAndTutor = useCallback(async () => {
     if (analyzingRef.current || loadingRef.current) return;
     analyzingRef.current = true;
     setAnalyzing(true);
+    setPhase('scanning');
     try {
       const photo = uploadedImage ? null : await cameraRef.current?.takePictureAsync({ base64: false, quality: 0.6 });
       const imageUri = uploadedImage || photo?.uri;
@@ -238,36 +240,59 @@ export default function ARScanScreen() {
       setLoading(true);
       const lesson = await api.generateLesson(problem.type ?? 'unknown', problem.content, level, selectedMode);
       const lessonSteps = lesson.steps ?? [];
-      setSteps(lessonSteps);
-      setCurrentStep(0);
-      const first = lessonSteps[0];
-      if (first) {
-        const msg = `I scanned your problem: "${problem.content.slice(0, 80)}${problem.content.length > 80 ? '...' : ''}". Let's solve it. ${first.instruction}`;
-        messagesRef.current = [{ role: 'teacher', text: msg }];
-        setMessages(messagesRef.current);
-        speak(msg);
+      if (!lessonSteps.length) {
+        setMessages([{ role: 'teacher', text: 'I could not generate steps. Try again.' }]);
+        setPhase('idle');
+        return;
       }
-      setSessionActive(true);
+      setSteps(lessonSteps);
+      canvasRef.current?.clearAll();
+      const scanMsg = `I scanned your problem. Let me explain the solution step by step.`;
+      setMessages([{ role: 'teacher', text: scanMsg }]);
+      await speak(scanMsg);
+      autoAdvanceSteps(lessonSteps);
     } catch {
-      messagesRef.current = [{ role: 'teacher', text: 'Point your camera at a problem or upload an image. I will guide you step by step.' }];
-      setMessages(messagesRef.current);
+      setMessages([{ role: 'teacher', text: 'Point your camera at a problem or upload an image.' }]);
+      setPhase('idle');
     } finally {
       analyzingRef.current = false;
       loadingRef.current = false;
       setAnalyzing(false);
       setLoading(false);
     }
-  }, [selectedMode, level, speak, uploadedImage]);
+  }, [selectedMode, level, speak, uploadedImage, autoAdvanceSteps]);
 
-  useEffect(() => {
-    if (!sessionActive) return;
-    scanTimerRef.current = setInterval(() => {
-      recognizeAndTutor();
-    }, SCAN_INTERVAL);
-    return () => {
-      if (scanTimerRef.current) clearInterval(scanTimerRef.current);
-    };
-  }, [sessionActive, recognizeAndTutor]);
+  const finishAndExport = useCallback(async () => {
+    if (phase === 'finished') return;
+    setPhase('finished');
+    try {
+      const canvasDataUrl = await canvasRef.current?.getDataUrl();
+      const stepsForPdf = steps.map((s) => ({
+        number: s.number,
+        instruction: s.instruction,
+        explanation: s.explanation,
+        answer: s.answer,
+      }));
+      const result = await api.createSessionPdf({
+        title: `AR Tutor Session - ${selectedMode}`,
+        problem: problemContent || 'Scanned problem',
+        steps: stepsForPdf,
+        transcript: messages.map((m) => ({ role: m.role, text: m.text })),
+        penNotes: canvasDataUrl ? [{ text: 'AR Pen Drawing', x: 50, y: 10, color: colors.primary, imageData: canvasDataUrl }] : [],
+      });
+      if (Platform.OS === 'web') {
+        const link = document.createElement('a');
+        link.href = `data:application/pdf;base64,${result.base64}`;
+        link.download = result.filename;
+        link.click();
+      } else {
+        const FileSystem = await import('expo-file-system');
+        const path = `${(FileSystem as any).documentDirectory}${result.filename}`;
+        await FileSystem.writeAsStringAsync(path, result.base64, { encoding: FileSystem.EncodingType.Base64 });
+      }
+    } catch {}
+    setTimeout(() => router.back(), 2000);
+  }, [steps, messages, router, problemContent, selectedMode, phase]);
 
   const toggleListen = useCallback(async () => {
     if (voice.isSpeaking) {
@@ -283,9 +308,8 @@ export default function ARScanScreen() {
           const text = await voice.transcribeAudio(uri);
           if (text) {
             await sendVoiceMessage(text);
-            const msgs = messagesRef.current;
-            const reply = [...msgs].reverse().find((m) => m.role === 'teacher')?.text || 'Good question. Try the next small step.';
-            speak(reply);
+            const reply = messages.findLast?.((m) => m.role === 'teacher')?.text;
+            if (reply) speak(reply);
           }
         } finally {
           setListening(false);
@@ -294,102 +318,18 @@ export default function ARScanScreen() {
     } else {
       await voice.startRecording();
     }
-  }, [voice, sendVoiceMessage, speak]);
-
-  const writeStep = useCallback(() => {
-    if (!step) return;
-    const pos = { x: 15 + Math.random() * 30, y: 20 + Math.random() * 30 };
-    setPenNotes((n) => [
-      ...n,
-      {
-        text: step.ar_annotation || step.instruction,
-        x: pos.x,
-        y: pos.y,
-        color: colors.primary,
-      },
-    ]);
-  }, [step]);
-
-  const nextStep = useCallback(async () => {
-    if (!steps.length) return;
-    const next = Math.min(steps.length - 1, currentStep + 1);
-    setCurrentStep(next);
-    const ns = steps[next];
-    if (ns) {
-      messagesRef.current = [...messagesRef.current, { role: 'teacher', text: ns.instruction }];
-      setMessages(messagesRef.current);
-      speak(ns.instruction);
-    }
-  }, [steps, currentStep, speak]);
-
-  const prevStep = useCallback(async () => {
-    if (!steps.length || currentStep <= 0) return;
-    const prev = currentStep - 1;
-    setCurrentStep(prev);
-    const ps = steps[prev];
-    if (ps) {
-      messagesRef.current = [...messagesRef.current, { role: 'teacher', text: `Going back: ${ps.instruction}` }];
-      setMessages(messagesRef.current);
-      speak(ps.instruction);
-    }
-  }, [steps, currentStep, speak]);
-
-  const exportCanvas = useCallback(async (): Promise<string | null> => {
-    if (Platform.OS === 'web') {
-      const cvs = document.querySelector('canvas');
-      if (cvs) return cvs.toDataURL('image/png');
-      return null;
-    }
-    return null;
-  }, []);
-
-  const finishSession = useCallback(async () => {
-    Alert.alert('Finish session?', 'Your conversation, AR pen drawings, and notes will be saved as a PDF.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Finish',
-        onPress: async () => {
-          try {
-            const canvasDataUrl = await exportCanvas();
-            const penCanvasNote = canvasDataUrl ? [{ text: 'AR Pen Drawing', x: 50, y: 10, color: colors.primary, imageData: canvasDataUrl }] : [];
-            const result = await api.createSessionPdf({
-              title: `AR Tutor Session - ${selectedMode}`,
-              problem: problemContent || 'Scanned problem',
-              steps,
-              transcript: messagesRef.current,
-              penNotes: [...penNotes, ...penCanvasNote],
-            });
-            if (Platform.OS === 'web') {
-              const link = document.createElement('a');
-              link.href = `data:application/pdf;base64,${result.base64}`;
-              link.download = result.filename;
-              link.click();
-            } else {
-              const FileSystem = await import('expo-file-system');
-              const path = `${(FileSystem as any).documentDirectory}${result.filename}`;
-              await FileSystem.writeAsStringAsync(path, result.base64, { encoding: FileSystem.EncodingType.Base64 });
-              Alert.alert('PDF saved', path);
-            }
-          } catch {
-            Alert.alert('Error', 'Failed to generate PDF');
-          }
-          router.back();
-        },
-      },
-    ]);
-  }, [steps, penNotes, router, problemContent, selectedMode, exportCanvas]);
+  }, [voice, sendVoiceMessage, messages, speak]);
 
   const handleImageUpload = useCallback(() => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.onchange = async (e: any) => {
+    input.onchange = (e: any) => {
       const file = e.target?.files?.[0];
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (ev) => {
-        const dataUrl = ev.target?.result as string;
-        setUploadedImage(dataUrl);
+        setUploadedImage(ev.target?.result as string);
       };
       reader.readAsDataURL(file);
     };
@@ -399,6 +339,7 @@ export default function ARScanScreen() {
   useEffect(() => {
     return () => {
       if (scanTimerRef.current) clearInterval(scanTimerRef.current);
+      if (stepTimerRef.current) clearTimeout(stepTimerRef.current);
       if (wsRef.current) wsRef.current.close();
     };
   }, []);
@@ -413,7 +354,7 @@ export default function ARScanScreen() {
     );
   }
 
-  const showCamera = permission.granted && Platform.OS !== 'web' && !uploadedImage;
+  const showCamera = permission.granted && Platform.OS !== 'web' && !uploadedImage && phase === 'idle';
 
   return (
     <View style={styles.container}>
@@ -421,13 +362,12 @@ export default function ARScanScreen() {
         <CameraView ref={cameraRef} style={styles.camera} facing="back" enableTorch={false}>
           <View style={styles.cameraOverlay}>
             <View style={[styles.arFrame, { borderColor: colors.primary + '60' }]} />
-            {(analyzing || loading) && (
+            {phase === 'scanning' && (
               <View style={styles.scanningOverlay}>
-                <Animated.View style={[styles.scanLine, { backgroundColor: colors.primary, transform: [{ translateY: scanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 300] }) }] }]} />
                 <Text style={styles.scanningText}>{loading ? 'Preparing lesson...' : 'Scanning...'}</Text>
               </View>
             )}
-            {!uploadedImage && (
+            {!uploadedImage && phase === 'idle' && (
               <TouchableOpacity style={styles.uploadBtn} onPress={handleImageUpload}>
                 <Ionicons name="cloud-upload-outline" size={20} color={colors.text} />
                 <Text style={styles.uploadBtnText}>Upload Image</Text>
@@ -439,26 +379,29 @@ export default function ARScanScreen() {
         <View style={styles.imagePreviewContainer}>
           {uploadedImage ? (
             <View style={styles.imagePreviewWrapper}>
-              <View style={[styles.arFrame, { borderColor: colors.primary + '60', position: 'absolute', zIndex: 2 }]} />
-              {(analyzing || loading) && (
+              {(phase === 'idle' || phase === 'scanning') && (
+                <View style={[styles.arFrame, { borderColor: colors.primary + '60', position: 'absolute', zIndex: 2 }]} />
+              )}
+              {phase === 'scanning' && (
                 <View style={styles.scanningOverlay}>
-                  <Animated.View style={[styles.scanLine, { backgroundColor: colors.primary, transform: [{ translateY: scanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 300] }) }] }]} />
                   <Text style={styles.scanningText}>{loading ? 'Preparing lesson...' : 'Scanning...'}</Text>
                 </View>
               )}
               {/* eslint-disable-next-line jsx-a11y/alt-text */}
               <img src={uploadedImage} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              <TouchableOpacity style={styles.retakeBtn} onPress={() => setUploadedImage(null)}>
-                <Ionicons name="camera-outline" size={20} color={colors.text} />
-                <Text style={styles.uploadBtnText}>Use Camera</Text>
-              </TouchableOpacity>
+              {phase === 'idle' && (
+                <TouchableOpacity style={styles.retakeBtn} onPress={() => { setUploadedImage(null); canvasRef.current?.clearAll(); }}>
+                  <Ionicons name="camera-outline" size={20} color={colors.text} />
+                  <Text style={styles.uploadBtnText}>Use Camera</Text>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             <View style={styles.uploadPrompt}>
               <Ionicons name="cloud-upload" size={56} color={colors.primary} />
               <Text style={styles.uploadPromptTitle}>Upload a problem</Text>
-              <Text style={styles.uploadPromptSub}>Take a photo or choose an image of your problem</Text>
-                <View style={styles.uploadActions}>
+              <Text style={styles.uploadPromptSub}>Choose an image of your problem to receive step-by-step tutoring</Text>
+              <View style={styles.uploadActions}>
                 <TouchableOpacity style={styles.uploadActionBtn} onPress={handleImageUpload}>
                   <Ionicons name="folder-open" size={22} color={colors.bg} />
                   <Text style={styles.cameraBtnText}>Choose File</Text>
@@ -469,147 +412,102 @@ export default function ARScanScreen() {
         </View>
       )}
 
-      <View style={styles.annotationLayer} pointerEvents="none">
-        <View style={[styles.topAnnotation, floatingStyle]}>
-          <GlassCard style={styles.statusCard}>
-            <View style={styles.statusRow}>
-              <View style={[styles.liveDot, { backgroundColor: sessionActive ? colors.success : colors.warning }]} />
-              <Text style={styles.statusText}>{sessionActive ? 'Live Session' : 'Ready'}</Text>
-              <Text style={styles.progressText}>{progress}%</Text>
+      {phase === 'tutoring' && (
+        <View style={styles.annotationLayer} pointerEvents="none">
+          <View style={[styles.topAnnotation, floatingStyle]}>
+            <GlassCard style={styles.statusCard}>
+              <View style={styles.statusRow}>
+                <View style={[styles.liveDot, { backgroundColor: colors.success }]} />
+                <Text style={styles.statusText}>Step {stepIndexRef.current + 1} of {steps.length}</Text>
+                <Text style={styles.progressText}>{progress}%</Text>
+              </View>
+            </GlassCard>
+          </View>
+
+          {messages.length > 0 && (
+            <View style={styles.currentMessage}>
+              <GlassCard style={styles.messageCard}>
+                <View style={[styles.messageInner, styles.teacherInner]}>
+                  <Text style={[styles.messageRole, { color: colors.primary }]}>Mentis</Text>
+                  <Text style={styles.messageText} numberOfLines={3}>{messages[messages.length - 1]?.text}</Text>
+                </View>
+              </GlassCard>
             </View>
-            {step && arEnabled && (
-              <Animated.View style={[styles.floatingStep, annotationStyle]}>
-                <Text style={styles.floatingLabel}>Step {step.number} of {steps.length}</Text>
-                <Text style={styles.floatingText} numberOfLines={2}>{step.ar_annotation || step.instruction}</Text>
-              </Animated.View>
-            )}
-          </GlassCard>
-        </View>
-
-        {messagesRef.current.length > 0 && (
-          <ScrollView
-            style={styles.messagesScroll}
-            contentContainerStyle={styles.messagesContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {messagesRef.current.slice(-4).map((msg, i) => (
-              <View key={i} style={[styles.messageOverlay, { marginBottom: 8 }]}>
-                <GlassCard style={styles.messageCard}>
-                  <View style={[styles.messageInner, msg.role === 'student' ? styles.studentInner : styles.teacherInner]}>
-                    <Text style={[styles.messageRole, { color: msg.role === 'student' ? colors.accent : colors.primary }]}>
-                      {msg.role === 'student' ? 'You' : 'Mentis'}
-                    </Text>
-                    <Text style={styles.messageText} numberOfLines={3}>{msg.text}</Text>
-                  </View>
-                </GlassCard>
-              </View>
-            ))}
-            {streamingText ? (
-              <View style={styles.messageOverlay}>
-                <GlassCard style={styles.messageCard}>
-                  <View style={[styles.messageInner, styles.teacherInner]}>
-                    <Text style={[styles.messageRole, { color: colors.primary }]}>Mentis</Text>
-                    <Text style={styles.messageText}>{streamingText}</Text>
-                  </View>
-                </GlassCard>
-              </View>
-            ) : null}
-          </ScrollView>
-        )}
-      </View>
-
-      {!sessionActive && !uploadedImage && Platform.OS === 'web' && !permission.granted && (
-        <View style={styles.modeSelector}>
-          <Text style={styles.modeSelectorTitle}>Select Mode</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modeRow}>
-            {MODES.map((m) => {
-              const active = selectedMode === m.id;
-              return (
-                <TouchableOpacity
-                  key={m.id}
-                  style={[styles.modeChip, active && styles.modeChipActive]}
-                  onPress={() => setSelectedMode(m.id)}
-                >
-                  <Ionicons name={m.icon} size={18} color={active ? colors.bg : colors.textSecondary} />
-                  <Text style={[styles.modeText, active && styles.modeTextActive]}>{m.title}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          )}
         </View>
       )}
 
-      <ARPenCanvas color={colors.primary} lineWidth={3} visible={showPen} />
-
-      {penNotes.map((note, i) => (
-        <View key={i} style={[styles.penNoteOverlay, { left: `${note.x}%`, top: `${note.y}%` }]}>
-          <View style={[styles.penDot, { backgroundColor: note.color }]} />
-          <Text style={[styles.penText, { color: note.color }]}>{note.text}</Text>
+      {phase === 'doubts' && (
+        <View style={styles.doubtsOverlay}>
+          <GlassCard style={styles.doubtsCard}>
+            <Ionicons name="help-circle" size={40} color={colors.warning} />
+            <Text style={styles.doubtsTitle}>Any doubts?</Text>
+            <Text style={styles.doubtsSub}>Tap the mic to ask a question, or wait for the PDF to download.</Text>
+            <TouchableOpacity style={styles.doubtsFinishBtn} onPress={finishAndExport}>
+              <Text style={styles.doubtsFinishText}>Download PDF Now</Text>
+            </TouchableOpacity>
+          </GlassCard>
         </View>
-      ))}
+      )}
+
+      {phase === 'finished' && (
+        <View style={styles.doubtsOverlay}>
+          <GlassCard style={styles.doubtsCard}>
+            <Ionicons name="checkmark-circle" size={40} color={colors.success} />
+            <Text style={styles.doubtsTitle}>Session Complete!</Text>
+            <Text style={styles.doubtsSub}>Your PDF has been downloaded. Redirecting...</Text>
+          </GlassCard>
+        </View>
+      )}
+
+      <ARPenCanvas ref={canvasRef} color={colors.primary} lineWidth={3} visible={showPen && phase === 'tutoring'} />
 
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.iconBtn} onPress={() => {
+          if (phase === 'tutoring' || phase === 'scanning') {
+            Alert.alert('End session?', 'Your progress will be lost.', [
+              { text: 'Stay', style: 'cancel' },
+              { text: 'End', onPress: () => router.back() },
+            ]);
+          } else {
+            router.back();
+          }
+        }}>
           <Ionicons name="close" size={22} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.titleBlock}>
           <Text style={styles.titleText} numberOfLines={1}>AR Tutor</Text>
           <Text style={styles.subtitleText}>{selectedMode} · {level}</Text>
         </View>
-        <TouchableOpacity style={styles.iconBtn} onPress={() => setArEnabled(!arEnabled)}>
-          <Ionicons name={arEnabled ? 'eye' : 'eye-off'} size={20} color={colors.primary} />
-        </TouchableOpacity>
       </View>
 
       <View style={styles.controls}>
         <View style={styles.controlRow}>
-          <TouchableOpacity style={[styles.ctrlBtn, listening && styles.ctrlBtnActive]} onPress={toggleListen}>
-            <Ionicons name={listening ? 'mic' : 'mic-outline'} size={22} color={listening ? colors.accent : colors.text} />
-            <Text style={styles.ctrlText}>{listening ? 'Listening...' : 'Talk'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.ctrlBtn, showPen && styles.ctrlBtnActive]} onPress={() => setShowPen(!showPen)}>
-            <Ionicons name="create-outline" size={22} color={showPen ? colors.warning : colors.text} />
-            <Text style={styles.ctrlText}>AR Pen</Text>
-          </TouchableOpacity>
-
-          {step && (
-            <TouchableOpacity style={styles.ctrlBtn} onPress={writeStep}>
-              <Ionicons name="pencil-outline" size={22} color={colors.secondary} />
-              <Text style={styles.ctrlText}>Write Step</Text>
+          {phase !== 'finished' && (
+            <TouchableOpacity style={[styles.ctrlBtn, listening && styles.ctrlBtnActive]} onPress={toggleListen}>
+              <Ionicons name={listening ? 'mic' : 'mic-outline'} size={22} color={listening ? colors.accent : colors.text} />
+              <Text style={styles.ctrlText}>{listening ? 'Listening...' : 'Ask Doubt'}</Text>
             </TouchableOpacity>
           )}
-
-          {steps.length > 0 && currentStep > 0 && (
-            <TouchableOpacity style={styles.ctrlBtn} onPress={prevStep}>
-              <Ionicons name="play-back-outline" size={22} color={colors.text} />
-              <Text style={styles.ctrlText}>Back</Text>
-            </TouchableOpacity>
-          )}
-
-          {steps.length > 0 && currentStep < steps.length - 1 && (
-            <TouchableOpacity style={styles.ctrlBtn} onPress={nextStep}>
-              <Ionicons name="play-forward-outline" size={22} color={colors.text} />
-              <Text style={styles.ctrlText}>Next</Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity style={[styles.ctrlBtn, styles.finishBtn]} onPress={finishSession}>
-            <Ionicons name="checkmark-circle-outline" size={22} color={colors.bg} />
-            <Text style={[styles.ctrlText, { color: colors.bg }]}>Finish</Text>
-          </TouchableOpacity>
         </View>
 
-        {!sessionActive && (
+        {phase === 'idle' && (
           <TouchableOpacity style={styles.startBtn} onPress={recognizeAndTutor} disabled={analyzing || loading}>
             {(analyzing || loading) ? (
               <ActivityIndicator size="small" color={colors.bg} />
             ) : (
               <>
                 <Ionicons name="scan-outline" size={22} color={colors.bg} />
-                <Text style={styles.startBtnText}>{uploadedImage ? 'Scan Uploaded Image' : 'Start Live AR Tutor'}</Text>
+                <Text style={styles.startBtnText}>{uploadedImage ? 'Scan & Start Tutoring' : 'Start AR Tutor'}</Text>
               </>
             )}
+          </TouchableOpacity>
+        )}
+
+        {phase === 'doubts' && (
+          <TouchableOpacity style={styles.startBtn} onPress={finishAndExport}>
+            <Ionicons name="download-outline" size={22} color={colors.bg} />
+            <Text style={styles.startBtnText}>Download PDF</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -628,10 +526,6 @@ export default function ARScanScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
-  permissionContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md, backgroundColor: colors.bg },
-  permissionText: { color: colors.textSecondary, textAlign: 'center', fontSize: 16, marginBottom: spacing.md },
-  permissionButton: { backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: borderRadius.md },
-  permissionButtonText: { color: colors.bg, fontWeight: '600', fontSize: 16 },
   camera: StyleSheet.absoluteFill,
   cameraOverlay: StyleSheet.absoluteFill,
   arFrame: {
@@ -654,15 +548,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
-  scanLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 3,
-    opacity: 0.9,
-  },
-  scanningText: { color: colors.text, fontSize: 14, fontWeight: '700', marginTop: 8 },
+  scanningText: { color: colors.text, fontSize: 16, fontWeight: '700' },
   uploadBtn: { position: 'absolute', bottom: 20, right: 20, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.surface + 'E6', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.border },
   uploadBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
   retakeBtn: { position: 'absolute', bottom: 20, left: 20, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.surface + 'E6', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.border },
@@ -672,31 +560,27 @@ const styles = StyleSheet.create({
   uploadPromptTitle: { fontSize: 22, fontWeight: '800', color: colors.text, marginTop: spacing.sm },
   uploadPromptSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
   uploadActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
-  cameraBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: borderRadius.md },
+  uploadActionBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: borderRadius.md },
   cameraBtnText: { color: colors.bg, fontWeight: '700', fontSize: 15 },
-  uploadActionBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.secondary, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: borderRadius.md },
   annotationLayer: { ...StyleSheet.absoluteFill },
   topAnnotation: { position: 'absolute', top: Platform.OS === 'ios' ? 60 : 30, left: spacing.lg, right: spacing.lg },
-  statusCard: { padding: spacing.sm, marginBottom: spacing.sm },
+  statusCard: { padding: spacing.sm },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   statusText: { flex: 1, color: colors.text, fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
   progressText: { color: colors.primary, fontSize: 12, fontWeight: '800' },
-  floatingStep: { marginTop: spacing.sm, padding: spacing.sm, borderRadius: borderRadius.md, backgroundColor: colors.surface + 'E6', borderWidth: 1, borderColor: colors.border },
-  floatingLabel: { color: colors.primary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 2 },
-  floatingText: { color: colors.text, fontSize: 14, fontWeight: '600' },
-  messagesScroll: { position: 'absolute', top: Platform.OS === 'ios' ? 130 : 100, left: spacing.lg, right: spacing.lg, maxHeight: 200 },
-  messagesContent: { gap: 4 },
-  messageOverlay: {},
-  messageCard: { padding: spacing.sm, borderRadius: borderRadius.md, maxWidth: '85%' },
+  currentMessage: { position: 'absolute', bottom: 120, left: spacing.lg, right: spacing.lg },
+  messageCard: { padding: spacing.sm, borderRadius: borderRadius.md },
   messageInner: { borderRadius: borderRadius.md },
-  studentInner: { backgroundColor: colors.accent + '20', borderColor: colors.accent + '40', alignSelf: 'flex-end', borderWidth: 1 },
-  teacherInner: { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40', alignSelf: 'flex-start', borderWidth: 1 },
+  teacherInner: { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40', borderWidth: 1 },
   messageRole: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', marginBottom: 2 },
   messageText: { color: colors.text, fontSize: 13, lineHeight: 18 },
-  penNoteOverlay: { position: 'absolute', flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '60%' },
-  penDot: { width: 8, height: 8, borderRadius: 4 },
-  penText: { fontSize: 13, fontWeight: '900' },
+  doubtsOverlay: { ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 100 },
+  doubtsCard: { padding: spacing.xl, alignItems: 'center', gap: spacing.md, marginHorizontal: spacing.xl, borderRadius: borderRadius.lg },
+  doubtsTitle: { color: colors.text, fontSize: 22, fontWeight: '800' },
+  doubtsSub: { color: colors.textSecondary, fontSize: 14, textAlign: 'center' },
+  doubtsFinishBtn: { backgroundColor: colors.primary, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.md },
+  doubtsFinishText: { color: colors.bg, fontWeight: '700', fontSize: 16 },
   topBar: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 50 : 20,
@@ -710,13 +594,6 @@ const styles = StyleSheet.create({
   titleBlock: { flex: 1, backgroundColor: colors.surface + 'D9', borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
   titleText: { color: colors.text, fontSize: 15, fontWeight: '700' },
   subtitleText: { color: colors.textTertiary, fontSize: 11 },
-  modeSelector: { position: 'absolute', top: Platform.OS === 'ios' ? 110 : 80, left: 0, right: 0, paddingHorizontal: spacing.lg },
-  modeSelectorTitle: { color: colors.text, fontSize: 14, fontWeight: '700', marginBottom: spacing.sm, textTransform: 'uppercase' },
-  modeRow: { gap: spacing.sm },
-  modeChip: { height: 36, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, borderRadius: borderRadius.full, backgroundColor: colors.surface + 'E6', borderWidth: 1, borderColor: colors.border },
-  modeChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  modeText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
-  modeTextActive: { color: colors.bg },
   controls: { position: 'absolute', bottom: Platform.OS === 'ios' ? 50 : 30, left: spacing.lg, right: spacing.lg, gap: spacing.md },
   controlRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   ctrlBtn: {
@@ -732,7 +609,6 @@ const styles = StyleSheet.create({
   },
   ctrlBtnActive: { borderColor: colors.accent, backgroundColor: colors.accent + '18' },
   ctrlText: { color: colors.text, fontSize: 12, fontWeight: '700' },
-  finishBtn: { backgroundColor: colors.success, borderColor: colors.success },
   startBtn: {
     flexDirection: 'row',
     alignItems: 'center',
