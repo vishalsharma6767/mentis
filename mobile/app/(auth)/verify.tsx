@@ -18,7 +18,7 @@ export default function VerifyScreen() {
     setError('');
     try {
       await verifyOTP(userId, code);
-      router.replace(`/(auth)/set-password?userId=${userId}`);
+      router.replace(`/(auth)/set-password?userId=${userId}&email=${encodeURIComponent(email ?? '')}`);
     } catch (e: any) {
       setError(e?.message || e?.type || 'Invalid code. Try again.');
     } finally {

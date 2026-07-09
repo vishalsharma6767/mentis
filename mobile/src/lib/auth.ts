@@ -65,8 +65,17 @@ export async function signIn(email: string, password: string): Promise<UserSessi
   return userSession;
 }
 
-export async function setPassword(userId: string, password: string): Promise<void> {
+export async function setPassword(userId: string, password: string, email: string): Promise<UserSession> {
   await api.setPassword(userId, password);
+  const session = await account.createEmailPasswordSession(email, password);
+  const user = await account.get();
+  const userSession: UserSession = {
+    userId: user.$id,
+    email: user.email ?? '',
+    sessionId: session.$id,
+  };
+  await saveSession(userSession.userId, userSession.email, userSession.sessionId);
+  return userSession;
 }
 
 export async function saveProfile(data: ProfileData): Promise<void> {

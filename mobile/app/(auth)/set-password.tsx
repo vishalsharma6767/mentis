@@ -16,7 +16,7 @@ import { setPassword } from '../../src/lib/auth';
 
 export default function SetPasswordScreen() {
   const router = useRouter();
-  const { userId } = useLocalSearchParams<{ userId: string }>();
+  const { userId, email } = useLocalSearchParams<{ userId: string; email: string }>();
   const [password, setPasswordState] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -36,7 +36,7 @@ export default function SetPasswordScreen() {
     setLoading(true);
     setError('');
     try {
-      await setPassword(userId!, password);
+      await setPassword(userId!, password, email!);
       router.replace(`/(auth)/profile-setup?userId=${userId}`);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to set password.');
