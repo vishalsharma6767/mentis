@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react';
+import { useEffect, useRef, useState, useCallback, lazy, Suspense, Component } from 'react';
 import {
   View,
   Text,
@@ -48,6 +48,22 @@ const MODES: { id: LearningMode; title: string; icon: keyof typeof Ionicons.glyp
   { id: 'language', title: 'Language', icon: 'language', hint: 'Translate, grammar, pronunciation' },
   { id: 'diagram', title: 'Diagram', icon: 'git-network', hint: 'Labels, flows, relationships' },
 ];
+
+class ScanErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
+  state = { error: null as string | null };
+  static getDerivedStateFromError(e: any) { return { error: e?.message || String(e) }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#0A0A0F', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <Text style={{ color: '#FF3D8A', fontSize: 16, fontWeight: '700', marginBottom: 8 }}>Error</Text>
+          <Text style={{ color: '#888', fontSize: 13, textAlign: 'center' }}>{this.state.error}</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function ARScanScreen() {
   const router = useRouter();
@@ -356,6 +372,7 @@ export default function ARScanScreen() {
   const showCamera = !isWeb && !uploadedImage && phase === 'idle';
 
   return (
+    <ScanErrorBoundary>
     <View style={styles.container}>
       {showCamera && (
         <Suspense fallback={<View style={styles.cameraFallback} />}>
@@ -524,6 +541,7 @@ export default function ARScanScreen() {
         </View>
       )}
     </View>
+    </ScanErrorBoundary>
   );
 }
 
