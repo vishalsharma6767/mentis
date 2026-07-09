@@ -26,7 +26,7 @@ from app.ai.teacher.emotion import detect_emotion
 from app.ai.teacher.personality import TeacherPersonality
 from app.ai.teacher.planner import PlannerAgent
 from app.ai.teacher.prompts import teacher_agent_prompt as make_teacher_prompt
-from app.ai.teacher.responder import ResponderAgent
+from app.ai.teacher.responder import ResponseComposer
 from app.ai.teacher.schemas import (
     ARPlan,
     CoachingDecision,
@@ -74,7 +74,7 @@ class TeacherOrchestrator:
         self.coach = CoachAgent(self.personality)
         self.planner = PlannerAgent(self.personality)
         self.critic = CriticAgent()
-        self.responder = ResponderAgent()
+        self.responder = ResponseComposer()
         self._gateway: Optional[AIGateway] = None
         self.bus = EventBus.get_instance()
 
@@ -296,24 +296,21 @@ class TeacherOrchestrator:
         coaching: Optional[CoachingDecision] = None,
     ) -> TeacherResponse:
         try:
-            return await self.responder.compose(
+            return await self.responder.merge(
                 teacher_output=teacher_output,
-                ar_plan=ARPlan(),
                 speech_plan=SpeechPlan(),
+                ar_plan=ARPlan(),
                 memory_delta=teacher_output.response.memory_update,
                 quiz=None,
-                coaching_decision=coaching,
-                student=context.format_for_agent(),
-                dialogue_context=self.dialogue.to_system_context(),
-                provider=provider or LLMProvider.GROQ,
+                coaching=coaching,
                 language=language,
+                use_llm_polish=False,
             )
         except Exception as exc:
             log.error('composer_failed', error=str(exc))
             return TeacherResponse(
-                speech=None,
+                explanation='',
                 board_actions=teacher_output.response.board_actions,
-                ar_instructions=[],
             )
 
     # ── Helpers ────────────────────────────────────────────────────────

@@ -23,6 +23,7 @@ from app.core.constants import (
     SpeechEmotion,
     SpeechSpeed,
     Subject,
+    TeachingLanguage,
 )
 
 
@@ -247,13 +248,13 @@ class PlannerOutput(BaseModel):
 
 
 class TeacherOutput(BaseModel):
-    """Output from the Teacher Agent (feeds into Critic Agent + AR/Speech)."""
-    step: LessonStep
-    speech: SpeechAction
-    board_actions: list[Any] = Field(default_factory=list)
-    memory_update: MemoryUpdate = Field(default_factory=MemoryUpdate)
-    quiz: Optional[QuizItem] = None
-    confidence: float = 1.0
+    """Output from the Teacher Agent (feeds into Critic Agent + Composer)."""
+    response: 'TeacherResponse' = Field(default_factory=lambda: TeacherResponse())
+    lesson_plan: Optional[LessonPlan] = None
+    subject: Subject = Subject.GENERAL
+    topic: str = ''
+    student_level: Difficulty = Difficulty.INTERMEDIATE
+    language: TeachingLanguage = TeachingLanguage.HINGLISH
 
 
 class QualityScore(BaseModel):
@@ -310,16 +311,31 @@ class MemoryDelta(BaseModel):
 class TeacherResponse(BaseModel):
     """The final composed response sent to the frontend.
 
-    Every field is optional so the composer can include only what changed.
+    Contains the teacher's explanation, optional quiz, board/AR actions,
+    speech instructions, and memory updates. Every field is optional so
+    the composer can include only what changed in each turn.
     """
+    # Core teaching content
+    explanation: str = ''
+    key_points: list[str] = Field(default_factory=list)
+    checkpoints: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    analogy: str = ''
+    language_hint: str = 'hinglish'
+
+    # Actions
     speech: Optional[SpeechAction] = None
     board_actions: list[Any] = Field(default_factory=list)
     ar_instructions: list[ARAction] = Field(default_factory=list)
     quiz: Optional[QuizItem] = None
+
+    # Session state
     ask_doubts: bool = False
     session_complete: bool = False
     lesson_plan: Optional[LessonPlan] = None
-    memory_update: Optional[MemoryDelta] = None
+
+    # Memory & metadata
+    memory_update: Optional[MemoryUpdate] = None
 
 
 # ── WebSocket Messages ─────────────────────────────────────────────────
