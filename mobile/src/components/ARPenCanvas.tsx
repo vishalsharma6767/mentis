@@ -43,13 +43,14 @@ window.writeText=async function(t,clr,nl){
   var col=clr||pc;
   if(nl&&t){px=40;py+=lh}
   if(!t)return;
+  var dpr=window.devicePixelRatio||1;
   for(var i=0;i<t.length;i++){
     var ch=t[i];
     if(ch===' '){px+=cw*0.6;continue}
     var w=drawChar(ch,px,py,col);
     px+=w+1;
-    // Save area, draw cursor, sleep, restore (cursor dot never stays)
-    var sx=px-14,sy=py-14,sw=34,sh=34;
+    // Save canvas pixels, draw cursor, sleep, restore (cursor dot never stays)
+    var sx=Math.round((px-14)*dpr),sy=Math.round((py-14)*dpr),sw=Math.ceil(34*dpr),sh=Math.ceil(34*dpr);
     var saved=ctx.getImageData(sx,sy,sw,sh);
     ctx.beginPath();ctx.arc(px,py,ps+3,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();
     ctx.beginPath();ctx.arc(px,py,ps+6,0,Math.PI*2);ctx.strokeStyle=col+'60';ctx.lineWidth=1.5;ctx.stroke();
