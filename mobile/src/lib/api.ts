@@ -251,4 +251,39 @@ export const api = {
     const res = await fetch(`${BASE_URL}/api/tutor/study-groups`, { method: 'POST', body: formData });
     return res.json();
   },
+
+  // ── V1 API Methods ─────────────────────────────────────────────────────
+
+  async teachDoubt(content: string, mode: string = 'math', level: string = 'intermediate'): Promise<any> {
+    const res = await fetch(`${BASE_URL}/api/v1/teach/doubt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, mode, level }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  async teachDoubtWithImage(imageUri: string, mode: string = 'math', level: string = 'intermediate'): Promise<any> {
+    const formData = new FormData();
+    await appendImage(formData, imageUri);
+    formData.append('mode', mode);
+    formData.append('level', level);
+    const res = await fetch(`${BASE_URL}/api/v1/teach/doubt/image`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  async teachLesson(topic: string, level: string = 'intermediate', mode: string = 'math'): Promise<any> {
+    const res = await fetch(`${BASE_URL}/api/v1/teach/lesson`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic, level, mode }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
 };

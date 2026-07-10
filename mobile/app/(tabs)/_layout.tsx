@@ -26,18 +26,27 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: 'Dashboard',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="scan"
+        name="ask-doubt"
         options={{
-          title: 'AR Tutor',
+          title: 'Ask Doubt',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="scan" size={size} color={color} />
+            <Ionicons name="camera" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="teach-me"
+        options={{
+          title: 'Teach Me',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="school" size={size} color={color} />
           ),
         }}
       />
@@ -47,15 +56,6 @@ export default function TabsLayout() {
           title: 'Community',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="study-groups"
-        options={{
-          title: 'Groups',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people-circle" size={size} color={color} />
           ),
         }}
       />

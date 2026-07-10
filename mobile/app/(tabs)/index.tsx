@@ -2,10 +2,24 @@ import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, typography } from '../../src/theme';
+import { colors, spacing } from '../../src/theme';
 import { GlassCard, AnimatedButton } from '../../src/components';
 import { restoreSession } from '../../src/lib/auth';
 import { api } from '../../src/lib/api';
+
+const QUICK_ACTIONS = [
+  { title: 'Ask Doubt', icon: 'camera', color: colors.primary, route: '/ask-doubt', desc: 'Camera or upload' },
+  { title: 'Teach Me', icon: 'school', color: colors.accent, route: '/teach-me', desc: 'Any topic' },
+  { title: 'Practice', icon: 'document-text', color: colors.secondary, route: '/ask-doubt', desc: 'Solve problems' },
+  { title: 'Community', icon: 'people', color: '#44FF88', route: '/community', desc: 'Learn together' },
+];
+
+const WEEKLY_TOPICS = [
+  { name: 'Quadratic Equations', progress: 0.8, weak: false },
+  { name: 'Turing Machine', progress: 0.3, weak: true },
+  { name: 'Linked Lists', progress: 0.6, weak: false },
+  { name: 'Newton\'s Laws', progress: 0.1, weak: true },
+];
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -16,7 +30,7 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     const hour = new Date().getHours();
-    if (hour < 12) setGreeting('Good morning');
+    if (hour < 12) setGreeting('Namaste');
     else if (hour < 17) setGreeting('Good afternoon');
     else setGreeting('Good evening');
 
@@ -25,11 +39,11 @@ export default function DashboardScreen() {
         const session = await restoreSession();
         if (session) {
           const [data, streakData] = await Promise.all([
-            api.getStats(session.userId),
-            api.getStreak(session.userId),
+            api.getStats(session.userId).catch(() => null),
+            api.getStreak(session.userId).catch(() => ({ streak: 0 })),
           ]);
-          setStats(data);
-          setStreak(streakData.streak);
+          if (data) setStats(data);
+          setStreak(streakData?.streak ?? 0);
         }
       } catch {} finally {
         setLoading(false);
@@ -37,13 +51,6 @@ export default function DashboardScreen() {
     }
     load();
   }, []);
-
-  const quickActions = [
-    { title: 'Start AR Tutor', icon: 'scan', color: colors.primary, route: '/scan' },
-    { title: 'Practice', icon: 'document-text', color: colors.accent, route: '/scan?mode=homework' },
-    { title: 'Community', icon: 'people', color: colors.secondary, route: '/community' },
-    { title: 'Study Groups', icon: 'people-circle', color: '#44FF88', route: '/study-groups' },
-  ];
 
   return (
     <View style={styles.container}>
@@ -71,7 +78,7 @@ export default function DashboardScreen() {
                 <Ionicons name="flame" size={28} color={colors.warning} />
                 <View>
                   <Text style={styles.streakNumber}>{streak} Day Streak</Text>
-                  <Text style={styles.streakSub}>Keep it going!</Text>
+                  <Text style={styles.streakSub}>Keep learning daily!</Text>
                 </View>
               </View>
               <View style={styles.streakDots}>
@@ -85,17 +92,51 @@ export default function DashboardScreen() {
 
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionsGrid}>
-          {quickActions.map((action, i) => (
+          {QUICK_ACTIONS.map((action, i) => (
             <TouchableOpacity key={i} style={styles.actionShell} onPress={() => router.push(action.route as any)}>
               <GlassCard style={styles.actionCard}>
                 <View style={[styles.actionIcon, { backgroundColor: action.color + '20' }]}>
                   <Ionicons name={action.icon as any} size={28} color={action.color} />
                 </View>
                 <Text style={styles.actionTitle}>{action.title}</Text>
+                <Text style={styles.actionDesc}>{action.desc}</Text>
               </GlassCard>
             </TouchableOpacity>
           ))}
         </View>
+
+        <Text style={styles.sectionTitle}>Continue Learning</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.continueRow}>
+          {WEEKLY_TOPICS.filter(t => t.progress > 0 && t.progress < 1).map((topic, i) => (
+            <TouchableOpacity key={i} onPress={() => router.push('/teach-me')}>
+              <GlassCard style={styles.continueCard}>
+                <View style={styles.continueHeader}>
+                  <Text style={styles.continueName}>{topic.name}</Text>
+                  {topic.weak && <View style={styles.weakBadge}><Text style={styles.weakText}>Weak</Text></View>}
+                </View>
+                <View style={styles.progressBar}>
+                  <View style={[styles.progressFill, { width: `${topic.progress * 100}%` }]} />
+                </View>
+                <Text style={styles.progressText}>{Math.round(topic.progress * 100)}% complete</Text>
+              </GlassCard>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {WEEKLY_TOPICS.filter(t => t.weak).length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Weak Topics — Need Revision</Text>
+            <GlassCard style={styles.weakCard}>
+              {WEEKLY_TOPICS.filter(t => t.weak).map((topic, i) => (
+                <TouchableOpacity key={i} style={[styles.weakRow, i > 0 && styles.weakBorder]} onPress={() => router.push('/teach-me')}>
+                  <Ionicons name="alert-circle" size={18} color={colors.warning} />
+                  <Text style={styles.weakName}>{topic.name}</Text>
+                  <Ionicons name="arrow-forward" size={16} color={colors.textTertiary} />
+                </TouchableOpacity>
+              ))}
+            </GlassCard>
+          </>
+        )}
 
         <Text style={styles.sectionTitle}>Your Progress</Text>
         <View style={styles.statsRow}>
@@ -108,31 +149,14 @@ export default function DashboardScreen() {
             <Text style={styles.statLabel}>Total Sessions</Text>
           </GlassCard>
           <GlassCard style={styles.statCard}>
-            <Text style={styles.statValue}>{stats?.topTopics.length ?? 0}</Text>
-            <Text style={styles.statLabel}>Topics</Text>
+            <Text style={styles.statValue}>{streak}</Text>
+            <Text style={styles.statLabel}>Day Streak</Text>
           </GlassCard>
         </View>
 
-        {stats && stats.topTopics.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>Top Topics</Text>
-            <GlassCard style={styles.topicsCard}>
-              {stats.topTopics.map(([topic, count], i) => (
-                <View key={topic} style={[styles.topicRow, i > 0 && styles.topicBorder]}>
-                  <View style={styles.topicLeft}>
-                    <View style={[styles.topicDot, { backgroundColor: colors.primary }]} />
-                    <Text style={styles.topicName}>{topic}</Text>
-                  </View>
-                  <Text style={styles.topicCount}>{count}x</Text>
-                </View>
-              ))}
-            </GlassCard>
-          </>
-        )}
-
         <AnimatedButton
-          title="Start AR Session"
-          onPress={() => router.push('/scan')}
+          title="Ask a Doubt"
+          onPress={() => router.push('/ask-doubt')}
           style={styles.ctaButton}
         />
       </ScrollView>
@@ -141,178 +165,45 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingTop: 60,
-    paddingBottom: 100,
-    gap: spacing.lg,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  greeting: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  headline: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.text,
-    lineHeight: 34,
-  },
-  avatarButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  streakCard: {
-    padding: spacing.md,
-    backgroundColor: colors.warning + '15',
-    borderColor: colors.warning + '30',
-  },
-  streakRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  streakLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  streakNumber: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  streakSub: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  streakDots: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  streakDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.border,
-  },
-  streakDotActive: {
-    backgroundColor: colors.warning,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-  },
-  actionShell: {
-    width: '47%',
-  },
-  actionCard: {
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  actionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  statCard: {
-    flex: 1,
-    padding: spacing.md,
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    fontWeight: '600',
-  },
-  topicsCard: {
-    padding: spacing.md,
-    gap: spacing.xs,
-  },
-  topicRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-  },
-  topicBorder: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  topicLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  topicDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  topicName: {
-    fontSize: 14,
-    color: colors.text,
-    fontWeight: '500',
-    textTransform: 'capitalize',
-  },
-  topicCount: {
-    fontSize: 14,
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  ctaButton: {
-    marginTop: spacing.md,
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
+  scroll: { flex: 1 },
+  scrollContent: { padding: spacing.lg, paddingTop: 60, paddingBottom: 100, gap: spacing.lg },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.md },
+  greeting: { fontSize: 14, color: colors.textSecondary, marginBottom: 4 },
+  headline: { fontSize: 28, fontWeight: '700', color: colors.text, lineHeight: 34 },
+  avatarButton: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surfaceLight, alignItems: 'center', justifyContent: 'center' },
+  streakCard: { padding: spacing.md, backgroundColor: colors.warning + '15', borderColor: colors.warning + '30' },
+  streakRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  streakLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  streakNumber: { fontSize: 18, fontWeight: '700', color: colors.text },
+  streakSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  streakDots: { flexDirection: 'row', gap: 6 },
+  streakDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.border },
+  streakDotActive: { backgroundColor: colors.warning },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  actionShell: { width: '47%' },
+  actionCard: { padding: spacing.md, gap: spacing.xs },
+  actionIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  actionTitle: { fontSize: 14, fontWeight: '600', color: colors.text },
+  actionDesc: { fontSize: 11, color: colors.textTertiary, fontWeight: '500' },
+  continueRow: { marginBottom: spacing.sm },
+  continueCard: { padding: spacing.md, marginRight: spacing.md, minWidth: 180, gap: spacing.sm },
+  continueHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  continueName: { fontSize: 14, fontWeight: '700', color: colors.text, flex: 1 },
+  weakBadge: { backgroundColor: colors.warning + '30', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
+  weakText: { fontSize: 10, fontWeight: '700', color: colors.warning },
+  progressBar: { height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden' },
+  progressFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 2 },
+  progressText: { fontSize: 11, color: colors.textTertiary, fontWeight: '600' },
+  weakCard: { padding: spacing.md, gap: spacing.xs },
+  weakRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
+  weakBorder: { borderTopWidth: 1, borderTopColor: colors.border },
+  weakName: { flex: 1, fontSize: 14, color: colors.text, fontWeight: '500' },
+  statsRow: { flexDirection: 'row', gap: spacing.md },
+  statCard: { flex: 1, padding: spacing.md, alignItems: 'center', gap: spacing.xs },
+  statValue: { fontSize: 24, fontWeight: '700', color: colors.text },
+  statLabel: { fontSize: 12, color: colors.textTertiary, fontWeight: '600' },
+  ctaButton: { marginTop: spacing.md },
 });

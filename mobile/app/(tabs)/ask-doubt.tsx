@@ -9,14 +9,14 @@ import {
   Alert,
   Animated,
   Easing,
-  Image,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius } from '../../src/theme';
 import { GlassCard } from '../../src/components';
 import type { ARPenCanvasHandle } from '../../src/components/ARPenCanvas';
-import { api, LearningMode, BASE_URL } from '../../src/lib/api';
+import { api, BASE_URL } from '../../src/lib/api';
 import { useVoice } from '../../src/lib/voice';
 
 const CameraSection = lazy(() => import('../../src/components/CameraSection').then(m => ({ default: m.CameraSection })));
@@ -24,7 +24,7 @@ const ARPenCanvas = lazy(() => import('../../src/components/ARPenCanvas').then(m
 const isWeb = Platform.OS === 'web';
 const LINE_HEIGHT = 42;
 
-class ScanErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
   state = { error: null as string | null };
   static getDerivedStateFromError(e: any) { return { error: e?.message || String(e) }; }
   render() {
@@ -40,16 +40,17 @@ class ScanErrorBoundary extends Component<{ children: React.ReactNode }, { error
   }
 }
 
-export default function ARScanScreen() {
+export default function AskDoubtScreen() {
   const router = useRouter();
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [problemContent, setProblemContent] = useState('');
-  const [selectedMode] = useState<LearningMode>('math');
   const [speaking, setSpeaking] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [sessionActive, setSessionActive] = useState(false);
   const [awaitingDoubts, setAwaitingDoubts] = useState(false);
+  const [responseText, setResponseText] = useState('');
+  const [showResponse, setShowResponse] = useState(false);
   const speakAnim = useRef(new Animated.Value(0)).current;
   const cameraRef = useRef<any>(null);
   const canvasRef = useRef<ARPenCanvasHandle>(null);
@@ -89,6 +90,7 @@ export default function ARScanScreen() {
       await new Promise(r => setTimeout(r, 500));
       const dataUrl = await canvasRef.current?.getDataUrl();
       setSessionActive(false);
+      setShowResponse(false);
       if (!dataUrl) {
         setTimeout(() => router.back(), 1000);
         return;
@@ -157,21 +159,33 @@ export default function ARScanScreen() {
   const connectWebSocket = useCallback(async (content: string) => {
     if (wsRef.current) wsRef.current.close();
     try {
-      const wsUrl = `${BASE_URL.replace('http', 'ws')}/api/tutor/ws/tutor`;
+      const wsUrl = `${BASE_URL.replace('http', 'ws')}/api/v1/teach/stream`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       ws.onopen = () => {
-        ws.send(JSON.stringify({ mode: selectedMode, level: 'intermediate', content }));
+        ws.send(JSON.stringify({ type: 'doubt', content, mode: 'math', level: 'intermediate' }));
         setWsConnected(true);
       };
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'chunk') return;
-          if (data.type === 'actions') {
-            processActions(data.actions);
-          } else if (data.type === 'done' && data.text) {
+          if (data.type === 'speech') {
+            setResponseText(prev => prev + data.text + '\n');
+            setShowResponse(true);
             processActions([{ say: data.text }]);
+          } else if (data.type === 'board') {
+            processActions([{ write: data.text, color: data.color }]);
+          } else if (data.type === 'pointer') {
+            processActions([{ circle: data, color: data.color }]);
+          } else if (data.type === 'thinking') {
+            setResponseText(prev => prev + '🤔 ' + (data.text || 'Thinking...') + '\n');
+          } else if (data.type === 'question') {
+            setResponseText(prev => prev + '\n❓ ' + data.text + '\n');
+            processActions([{ askDoubts: true }]);
+          } else if (data.type === 'done') {
+            setResponseText(prev => prev + '\n✅ Session complete!\n');
+          } else if (data.type === 'error') {
+            setResponseText(prev => prev + '\n⚠️ ' + data.message + '\n');
           }
         } catch {}
       };
@@ -180,11 +194,11 @@ export default function ARScanScreen() {
     } catch {
       setWsConnected(false);
     }
-  }, [selectedMode, processActions]);
+  }, [processActions]);
 
   const sendToWs = useCallback((text: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ text }));
+      wsRef.current.send(JSON.stringify({ type: 'student_response', text }));
     }
   }, []);
 
@@ -214,20 +228,21 @@ export default function ARScanScreen() {
   const startSession = useCallback(async (imageUri: string) => {
     setIsScanning(true);
     try {
-      const problem = await api.recognizeProblem(imageUri, selectedMode);
+      const problem = await api.recognizeProblem(imageUri);
       if (!problem?.content || problem.content.length < 5) {
         setIsScanning(false);
         return;
       }
-      setProblemContent(problem.content);
+      const content = problem.content;
+      setProblemContent(content);
       setIsScanning(false);
       canvasRef.current?.clearAll();
       setSessionActive(true);
-      await connectWebSocket(problem.content);
+      await connectWebSocket(content);
     } catch {
       setIsScanning(false);
     }
-  }, [selectedMode, connectWebSocket]);
+  }, [connectWebSocket]);
 
   const handleImageUpload = useCallback(() => {
     const input = document.createElement('input');
@@ -260,15 +275,15 @@ export default function ARScanScreen() {
   const showCamera = !isWeb && !uploadedImage;
 
   return (
-    <ScanErrorBoundary>
+    <ErrorBoundary>
       <View style={styles.container}>
         {showCamera && (
           <Suspense fallback={<View style={styles.cameraFallback} />}>
             <CameraSection ref={cameraRef} />
             <View style={styles.cameraOverlay}>
               <View style={styles.cameraHint}>
-                <Ionicons name="scan" size={32} color={colors.primary} />
-                <Text style={styles.cameraHintText}>Point at problem</Text>
+                <Ionicons name="camera" size={32} color={colors.primary} />
+                <Text style={styles.cameraHintText}>Capture your doubt</Text>
               </View>
               <TouchableOpacity style={styles.captureBtn} onPress={takePhoto}>
                 <View style={styles.captureInner} />
@@ -283,12 +298,24 @@ export default function ARScanScreen() {
 
         {!showCamera && !sessionActive && !isScanning && (
           <View style={styles.uploadPrompt}>
-            <Ionicons name="cloud-upload" size={56} color={colors.primary} />
-            <Text style={styles.uploadPromptTitle}>Upload a problem</Text>
-            <Text style={styles.uploadPromptSub}>Choose an image to start tutoring</Text>
+            <Ionicons name="camera" size={56} color={colors.primary} />
+            <Text style={styles.uploadPromptTitle}>Ask a Doubt</Text>
+            <Text style={styles.uploadPromptSub}>Capture or upload a problem, or type below</Text>
             <TouchableOpacity style={styles.uploadActionBtn} onPress={handleImageUpload}>
               <Ionicons name="folder-open" size={22} color={colors.bg} />
-              <Text style={styles.cameraBtnText}>Choose File</Text>
+              <Text style={styles.cameraBtnText}>Upload Image</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.typeBtn} onPress={() => {
+              const text = prompt('Type your doubt:');
+              if (text && text.length > 2) {
+                setProblemContent(text);
+                canvasRef.current?.clearAll();
+                setSessionActive(true);
+                connectWebSocket(text);
+              }
+            }}>
+              <Ionicons name="create" size={22} color={colors.primary} />
+              <Text style={styles.typeBtnText}>Type Doubt</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -306,10 +333,18 @@ export default function ARScanScreen() {
           </Suspense>
         )}
 
+        {showResponse && responseText && (
+          <View style={styles.responsePanel}>
+            <ScrollView style={styles.responseScroll}>
+              <Text style={styles.responseText}>{responseText}</Text>
+            </ScrollView>
+          </View>
+        )}
+
         {wsConnected && (
           <View style={styles.connectionBadge}>
             <View style={[styles.liveDot, { backgroundColor: colors.success }]} />
-            <Text style={styles.connectionText}>Tutoring</Text>
+            <Text style={styles.connectionText}>Teaching</Text>
           </View>
         )}
 
@@ -327,7 +362,7 @@ export default function ARScanScreen() {
             <Ionicons name="close" size={22} color={colors.text} />
           </TouchableOpacity>
           <View style={styles.titleBlock}>
-            <Text style={styles.titleText} numberOfLines={1}>AR Tutor</Text>
+            <Text style={styles.titleText} numberOfLines={1}>Ask Doubt</Text>
           </View>
         </View>
 
@@ -378,7 +413,7 @@ export default function ARScanScreen() {
                   setAwaitingDoubts(false);
                   await finishSession();
                 }}>
-                  <Text style={styles.doubtsFinishText}>No, download PNG</Text>
+                  <Text style={styles.doubtsFinishText}>All clear</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -393,7 +428,7 @@ export default function ARScanScreen() {
           </View>
         )}
       </View>
-    </ScanErrorBoundary>
+    </ErrorBoundary>
   );
 }
 
@@ -413,7 +448,12 @@ const styles = StyleSheet.create({
   uploadPromptTitle: { fontSize: 22, fontWeight: '800', color: colors.text, marginTop: spacing.sm },
   uploadPromptSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
   uploadActionBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.md },
+  typeBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.primary },
+  typeBtnText: { color: colors.primary, fontWeight: '700', fontSize: 15 },
   cameraBtnText: { color: colors.bg, fontWeight: '700', fontSize: 15 },
+  responsePanel: { position: 'absolute', top: 100, left: spacing.md, right: spacing.md, maxHeight: 200, backgroundColor: colors.surface + 'E6', borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, zIndex: 50 },
+  responseScroll: { maxHeight: 160 },
+  responseText: { color: colors.text, fontSize: 13, lineHeight: 18 },
   connectionBadge: { position: 'absolute', top: Platform.OS === 'ios' ? 54 : 24, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.surface + 'E6', paddingHorizontal: spacing.md, paddingVertical: 4, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.success + '40' },
   liveDot: { width: 6, height: 6, borderRadius: 3 },
   connectionText: { color: colors.text, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
