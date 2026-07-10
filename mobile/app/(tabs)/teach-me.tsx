@@ -201,6 +201,7 @@ export default function TeachMeScreen() {
             case 'speech':
               setLessonContent(prev => prev + data.text + '\n\n');
               setTeacherSpeaking(true);
+              setPhase(prev => prev === 'loading' || prev === 'planning' ? 'teaching' : prev);
               setTimeout(() => setTeacherSpeaking(false), Math.max(1500, data.text.length * 60));
               break;
 

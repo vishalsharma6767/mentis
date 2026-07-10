@@ -75,9 +75,11 @@ class TeachResponse(BaseModel):
     key_points: list[str] = []
     checkpoints: list[str] = []
     examples: list[str] = []
+    analogy: str = ''
+    lesson_plan: Optional[dict] = None
+    concepts: list[str] = []
     ask_doubts: bool = False
     session_complete: bool = False
-    concepts: list[str] = []
     scene_graph: Optional[dict] = None
     teaching_decision: Optional[dict] = None
 
@@ -131,6 +133,8 @@ def _response_to_teach(resp: TeacherResponse, session_id: str) -> TeachResponse:
         key_points=resp.key_points,
         checkpoints=resp.checkpoints,
         examples=resp.examples,
+        analogy=resp.analogy,
+        lesson_plan=resp.lesson_plan.model_dump() if resp.lesson_plan and hasattr(resp.lesson_plan, 'model_dump') else None,
         ask_doubts=resp.ask_doubts,
         session_complete=resp.session_complete,
     )

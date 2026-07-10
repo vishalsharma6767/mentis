@@ -100,6 +100,7 @@ class ResponseComposer:
             board_actions=list(source.board_actions),
             memory_update=memory_delta or source.memory_update,
             quiz=quiz or source.quiz,
+            lesson_plan=teacher_output.lesson_plan,
         )
 
         # Merge speech plan (creates SpeechAction from SpeechPlan)
