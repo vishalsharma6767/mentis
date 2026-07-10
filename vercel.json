@@ -1,7 +1,7 @@
 {
+  "installCommand": "cd mobile && npm install",
   "buildCommand": "cd mobile && npx expo export --platform web",
   "outputDirectory": "mobile/dist",
-  "installCommand": "cd mobile && npm install",
   "cleanUrls": true,
   "rewrites": [
     {
