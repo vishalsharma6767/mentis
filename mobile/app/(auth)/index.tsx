@@ -54,7 +54,7 @@ export default function OnboardingScreen() {
       <ParticleBackground />
       <View style={styles.content}>
         <View style={styles.logoPanel}>
-          <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+          <Image source={require('../../assets/icon.png')} style={styles.logo} resizeMode="contain" />
         </View>
         <Text style={styles.brand}>Mentis</Text>
         <Text style={styles.title}>{slide.title}</Text>
