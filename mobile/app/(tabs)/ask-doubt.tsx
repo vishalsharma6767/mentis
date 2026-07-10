@@ -270,6 +270,11 @@ export default function AskDoubtScreen() {
           setSessionPhase('question');
           break;
 
+        case 'lesson_plan':
+          if (data.homework?.length) setHomework(data.homework);
+          if (data.key_concepts?.length) setConcepts(data.key_concepts);
+          break;
+
         case 'key_points':
           setKeyPoints(data.points || []);
           break;

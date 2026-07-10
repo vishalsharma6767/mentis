@@ -298,7 +298,7 @@ class TeacherOrchestrator:
                 speech_plan=SpeechPlan(),
                 ar_plan=ARPlan(),
                 memory_delta=teacher_output.response.memory_update,
-                quiz=None,
+                quiz=teacher_output.response.quiz,
                 coaching=coaching,
                 language=language,
                 use_llm_polish=False,
