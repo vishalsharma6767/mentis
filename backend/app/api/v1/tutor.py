@@ -196,23 +196,47 @@ async def _process_image_with_vision(
     img_array = np.array(img)
 
     pipeline = _get_vision_pipeline()
-    scene = await pipeline.run(img_array)
-
-    adapter = VisionAdapter()
-    if adapter.needs_recapture(scene):
-        msg = adapter.get_recapture_message(scene)
-        raise HTTPException(status_code=422, detail=msg)
-
-    vision_output = adapter.to_vision_output(scene)
-    vision_dict = adapter.to_vision_context(scene)
-
-    scene_graph = _get_scene_graph()
     try:
-        teaching_decision = await scene_graph.process(scene)
-        decision_dict = teaching_decision.model_dump() if hasattr(teaching_decision, 'model_dump') else {}
-    except Exception:
-        decision_dict = None
+        scene = await pipeline.run(img_array)
+    except Exception as exc:
+        log.warning('vision_pipeline_failed', error=str(exc)[:200])
+        scene = None
 
+    if scene is not None:
+        adapter = VisionAdapter()
+        if not adapter.needs_recapture(scene):
+            vision_output = adapter.to_vision_output(scene)
+            vision_dict = adapter.to_vision_context(scene)
+
+            scene_graph = _get_scene_graph()
+            try:
+                teaching_decision = await scene_graph.process(scene)
+                decision_dict = teaching_decision.model_dump() if hasattr(teaching_decision, 'model_dump') else {}
+            except Exception:
+                decision_dict = None
+
+            context = UnifiedStudentContext(
+                profile=StudentProfile(
+                    user_id='anonymous',
+                    level=_parse_level(level),
+                    preferred_language=TeachingLanguage.HINGLISH,
+                ),
+                vision=VisionContext(
+                    raw_text=vision_output.get('raw_text', ''),
+                    subject=Subject.MATH if mode == 'math' else Subject.GENERAL,
+                    difficulty=_parse_level(level),
+                    topics=vision_output.get('topics', []),
+                    problem_type=vision_output.get('problem_type', 'general'),
+                    formulas=vision_output.get('formulas', []),
+                ),
+                session=SessionContext(
+                    session_id=f'ses_{int(time.time())}',
+                    session_started_at=time.time(),
+                ),
+            )
+            return context, vision_dict, decision_dict
+
+    raw_text = await _extract_text_from_image(img)
     context = UnifiedStudentContext(
         profile=StudentProfile(
             user_id='anonymous',
@@ -220,20 +244,43 @@ async def _process_image_with_vision(
             preferred_language=TeachingLanguage.HINGLISH,
         ),
         vision=VisionContext(
-            raw_text=vision_output.get('raw_text', ''),
+            raw_text=raw_text,
             subject=Subject.MATH if mode == 'math' else Subject.GENERAL,
             difficulty=_parse_level(level),
-            topics=vision_output.get('topics', []),
-            problem_type=vision_output.get('problem_type', 'general'),
-            formulas=vision_output.get('formulas', []),
+            topics=[], problem_type='general', formulas=[],
         ),
         session=SessionContext(
             session_id=f'ses_{int(time.time())}',
             session_started_at=time.time(),
         ),
     )
+    return context, None, None
 
-    return context, vision_dict, decision_dict
+
+async def _extract_text_from_image(img: Image.Image) -> str:
+    """Extract text from image via LLM directly (no OpenCV dependency)."""
+    import base64
+    buf = BytesIO()
+    img.save(buf, format='JPEG', quality=85)
+    b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+    try:
+        gateway = await AIGateway.get_instance()
+        response = await gateway.execute(
+            messages=[{
+                'role': 'user',
+                'content': [
+                    {'type': 'text', 'text': 'Extract ALL text from this educational image. Return only the extracted text.'},
+                    {'type': 'image_url', 'image_url': {'url': f'data:image/jpeg;base64,{b64}'}},
+                ],
+            }],
+            provider=LLMProvider.GROQ,
+            max_tokens=4096,
+            temperature=0.1,
+        )
+        return response.text.strip() if response and response.text else ''
+    except Exception as exc:
+        log.warning('direct_image_extract_failed', error=str(exc)[:120])
+        return ''
 
 
 # ── Solve My Doubt (text) ────────────────────────────────────────────────────
