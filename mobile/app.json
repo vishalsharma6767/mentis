@@ -7,12 +7,16 @@
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "dark",
     "scheme": "mentis",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "splash": {
       "backgroundColor": "#0A0A0F"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mentis.app"
+      "bundleIdentifier": "com.mentis.app",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +26,8 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.mentis.app"
+      "package": "com.mentis.app",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png",
