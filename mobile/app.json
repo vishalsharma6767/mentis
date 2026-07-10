@@ -27,7 +27,11 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.mentis.app",
-      "versionCode": 1
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -37,7 +41,11 @@
     "extra": {
       "appwriteEndpoint": "https://sgp.cloud.appwrite.io/v1",
       "appwriteProjectId": "6a4e2a05001fe75eb314",
-      "apiUrl": "https://mentis-api-t9hk.onrender.com"
+      "apiUrl": "https://mentis-api-t9hk.onrender.com",
+      "router": {},
+      "eas": {
+        "projectId": "e573f2d7-3a22-483c-b090-3f12c50a4026"
+      }
     },
     "plugins": [
       "expo-router",
@@ -54,6 +62,7 @@
           "motionPermission": "Mentis needs motion access for AR tracking."
         }
       ]
-    ]
+    ],
+    "owner": "vshar_ma67"
   }
 }
