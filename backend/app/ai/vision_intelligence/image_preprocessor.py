@@ -63,6 +63,7 @@ class ImagePreprocessor:
               - 'processing_time_ms': elapsed milliseconds
         """
         import time
+        t0 = time.monotonic()
 
         if image is None or image.size == 0:
             return self._reject('Empty image received')
