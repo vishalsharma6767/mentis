@@ -62,6 +62,9 @@ class ImagePreprocessor:
               - 'quality': ImageQuality assessment
               - 'processing_time_ms': elapsed milliseconds
         """
+        if cv2 is None:
+            return self._reject('OpenCV not available — cannot process image')
+
         import time
         t0 = time.monotonic()
 
