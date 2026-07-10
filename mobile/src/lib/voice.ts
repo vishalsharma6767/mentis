@@ -177,9 +177,13 @@ export function useVoice() {
           utterance.pitch = 1.05;
           if (hiVoice) { utterance.voice = hiVoice; utterance.lang = 'hi-IN'; }
           else { utterance.lang = 'en-IN'; }
-          utterance.onend = () => { setIsSpeaking(false); resolve(); };
-          utterance.onerror = () => { setIsSpeaking(false); resolve(); };
+          let done = false;
+          const finish = () => { if (!done) { done = true; setIsSpeaking(false); resolve(); } };
+          utterance.onend = finish;
+          utterance.onerror = finish;
+          speechSynthesis.cancel();
           speechSynthesis.speak(utterance);
+          setTimeout(finish, text.length * 60 + 2000);
         });
       }
       return;
