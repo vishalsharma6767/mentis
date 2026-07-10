@@ -467,6 +467,26 @@ async def _run_and_stream(
     if result.examples:
         await _send_json(ws, {'type': 'examples', 'examples': result.examples})
 
+    if result.checkpoints:
+        await _send_json(ws, {'type': 'checkpoints', 'points': result.checkpoints})
+
+    if result.analogy:
+        await _send_json(ws, {'type': 'analogy', 'text': result.analogy})
+
+    if result.lesson_plan:
+        lp = result.lesson_plan
+        await _send_json(ws, {
+            'type': 'lesson_plan',
+            'topic': lp.topic,
+            'subject': lp.subject.value if hasattr(lp.subject, 'value') else str(lp.subject),
+            'difficulty': lp.difficulty.value if hasattr(lp.difficulty, 'value') else str(lp.difficulty),
+            'prerequisites': lp.prerequisite_topics,
+            'key_concepts': lp.key_concepts,
+            'total_steps': len(lp.steps),
+            'estimated_duration': lp.estimated_total_duration,
+            'homework': [h.model_dump() if hasattr(h, 'model_dump') else {'title': h.title, 'description': h.description} for h in lp.homework],
+        })
+
     if result.quiz:
         q = result.quiz.model_dump() if hasattr(result.quiz, 'model_dump') else result.quiz
         await _send_json(ws, {'type': 'quiz', 'questions': q})
@@ -484,10 +504,14 @@ async def _run_and_stream(
             await _send_json(ws, {'type': 'concepts', 'topics': topics})
         await _send_json(ws, {'type': 'scene', **vision_dict})
 
-    if result.session_complete:
-        await _send_json(ws, {'type': 'session_complete', 'session_id': session_id})
+    recommendations = []
+    if result.memory_update and result.memory_update.revision_suggestions:
+        recommendations = result.memory_update.revision_suggestions[:5]
 
-    await _send_json(ws, {'type': 'done', 'session_id': session_id})
+    if result.session_complete:
+        await _send_json(ws, {'type': 'session_complete', 'session_id': session_id, 'recommendations': recommendations})
+
+    await _send_json(ws, {'type': 'done', 'session_id': session_id, 'recommendations': recommendations})
 
 
 def _decode_base64_image(b64: str) -> bytes:
