@@ -1,3 +1,9 @@
+"""Legacy WebSocket tutoring — superseded by /api/v1/teach/stream.
+
+    Kept for backwards compatibility (existing mobile clients connect here).
+    Will be removed in V2. New clients should use /api/v1/teach/stream.
+"""
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import json
 

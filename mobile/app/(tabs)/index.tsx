@@ -14,19 +14,20 @@ const QUICK_ACTIONS = [
   { title: 'Community', icon: 'people', color: '#44FF88', route: '/community', desc: 'Learn together' },
 ];
 
-const WEEKLY_TOPICS = [
-  { name: 'Quadratic Equations', progress: 0.8, weak: false },
-  { name: 'Turing Machine', progress: 0.3, weak: true },
-  { name: 'Linked Lists', progress: 0.6, weak: false },
-  { name: 'Newton\'s Laws', progress: 0.1, weak: true },
-];
-
 export default function DashboardScreen() {
   const router = useRouter();
   const [greeting, setGreeting] = useState('Good morning');
-  const [stats, setStats] = useState<{ totalSessions: number; completedSessions: number; topTopics: [string, number][] } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<{
+    totalSessions: number;
+    completedSessions: number;
+    topTopics: [string, number][];
+    weakTopics: string[];
+    strongTopics: string[];
+  } | null>(null);
   const [streak, setStreak] = useState(0);
+  const [recentSessions, setRecentSessions] = useState<any[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -37,20 +38,37 @@ export default function DashboardScreen() {
     async function load() {
       try {
         const session = await restoreSession();
-        if (session) {
-          const [data, streakData] = await Promise.all([
-            api.getStats(session.userId).catch(() => null),
-            api.getStreak(session.userId).catch(() => ({ streak: 0 })),
-          ]);
-          if (data) setStats(data);
-          setStreak(streakData?.streak ?? 0);
+        const uid = session?.userId || 'anonymous';
+        setUserId(uid);
+
+        const [data, streakData, sessionsData] = await Promise.all([
+          api.getStats(uid).catch(() => null),
+          api.getStreak(uid).catch(() => ({ streak: 0 })),
+          api.listSessions(uid, 5).catch(() => ({ sessions: [] })),
+        ]);
+
+        if (data) {
+          const weak: string[] = [];
+          const strong: string[] = [];
+          if (data.topTopics) {
+            data.topTopics.forEach(([topic, count]) => {
+              if (count < 3) weak.push(topic);
+              else strong.push(topic);
+            });
+          }
+          setStats({ ...data, weakTopics: weak, strongTopics: strong });
         }
+        setStreak(streakData?.streak ?? 0);
+        setRecentSessions(sessionsData?.sessions || []);
       } catch {} finally {
         setLoading(false);
       }
     }
     load();
   }, []);
+
+  const weakTopics = stats?.weakTopics || [];
+  const continueTopics = (stats?.topTopics || []).slice(0, 3);
 
   return (
     <View style={styles.container}>
@@ -105,32 +123,38 @@ export default function DashboardScreen() {
           ))}
         </View>
 
-        <Text style={styles.sectionTitle}>Continue Learning</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.continueRow}>
-          {WEEKLY_TOPICS.filter(t => t.progress > 0 && t.progress < 1).map((topic, i) => (
-            <TouchableOpacity key={i} onPress={() => router.push('/teach-me')}>
-              <GlassCard style={styles.continueCard}>
-                <View style={styles.continueHeader}>
-                  <Text style={styles.continueName}>{topic.name}</Text>
-                  {topic.weak && <View style={styles.weakBadge}><Text style={styles.weakText}>Weak</Text></View>}
-                </View>
-                <View style={styles.progressBar}>
-                  <View style={[styles.progressFill, { width: `${topic.progress * 100}%` }]} />
-                </View>
-                <Text style={styles.progressText}>{Math.round(topic.progress * 100)}% complete</Text>
-              </GlassCard>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {continueTopics.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Continue Learning</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.continueRow}>
+              {continueTopics.map(([topic, count], i) => (
+                <TouchableOpacity key={i} onPress={() => router.push('/teach-me')}>
+                  <GlassCard style={styles.continueCard}>
+                    <View style={styles.continueHeader}>
+                      <Text style={styles.continueName}>{topic}</Text>
+                      {weakTopics.includes(topic) && (
+                        <View style={styles.weakBadge}><Text style={styles.weakText}>Weak</Text></View>
+                      )}
+                    </View>
+                    <View style={styles.progressBar}>
+                      <View style={[styles.progressFill, { width: `${Math.min(count * 20, 100)}%` }]} />
+                    </View>
+                    <Text style={styles.progressText}>{Math.min(count * 20, 100)}% complete</Text>
+                  </GlassCard>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </>
+        )}
 
-        {WEEKLY_TOPICS.filter(t => t.weak).length > 0 && (
+        {weakTopics.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Weak Topics — Need Revision</Text>
             <GlassCard style={styles.weakCard}>
-              {WEEKLY_TOPICS.filter(t => t.weak).map((topic, i) => (
+              {weakTopics.map((topic, i) => (
                 <TouchableOpacity key={i} style={[styles.weakRow, i > 0 && styles.weakBorder]} onPress={() => router.push('/teach-me')}>
                   <Ionicons name="alert-circle" size={18} color={colors.warning} />
-                  <Text style={styles.weakName}>{topic.name}</Text>
+                  <Text style={styles.weakName}>{topic}</Text>
                   <Ionicons name="arrow-forward" size={16} color={colors.textTertiary} />
                 </TouchableOpacity>
               ))}
@@ -153,6 +177,23 @@ export default function DashboardScreen() {
             <Text style={styles.statLabel}>Day Streak</Text>
           </GlassCard>
         </View>
+
+        {recentSessions.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Recent Sessions</Text>
+            <GlassCard style={styles.recentCard}>
+              {recentSessions.slice(0, 3).map((s: any, i: number) => (
+                <View key={i} style={[styles.recentRow, i > 0 && styles.weakBorder]}>
+                  <Ionicons name="book" size={16} color={colors.primary} />
+                  <Text style={styles.recentName} numberOfLines={1}>
+                    {(s.problemTitle || s.extractedText || 'Session')?.slice(0, 40)}
+                  </Text>
+                  <Text style={styles.recentStatus}>{s.status || 'completed'}</Text>
+                </View>
+              ))}
+            </GlassCard>
+          </>
+        )}
 
         <AnimatedButton
           title="Ask a Doubt"
@@ -205,5 +246,9 @@ const styles = StyleSheet.create({
   statCard: { flex: 1, padding: spacing.md, alignItems: 'center', gap: spacing.xs },
   statValue: { fontSize: 24, fontWeight: '700', color: colors.text },
   statLabel: { fontSize: 12, color: colors.textTertiary, fontWeight: '600' },
+  recentCard: { padding: spacing.md, gap: spacing.xs },
+  recentRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
+  recentName: { flex: 1, fontSize: 13, color: colors.text, fontWeight: '500' },
+  recentStatus: { fontSize: 11, color: colors.textTertiary, fontWeight: '600', textTransform: 'capitalize' },
   ctaButton: { marginTop: spacing.md },
 });

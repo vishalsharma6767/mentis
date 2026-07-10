@@ -578,7 +578,7 @@ export class LiveTeacherDirector {
   }
 
   private _yieldToMicrotask(): Promise<void> {
-    return new Promise((resolve) => setImmediate(resolve));
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
   }
 
   private _defaultState(): DirectorState {

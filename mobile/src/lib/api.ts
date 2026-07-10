@@ -273,7 +273,10 @@ export const api = {
       method: 'POST',
       body: formData,
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Vision processing failed' }));
+      throw new Error(err.detail || 'Unknown error');
+    }
     return res.json();
   },
 
@@ -285,5 +288,61 @@ export const api = {
     });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
+  },
+
+  // ── V1 Session / Memory / Concept Methods ──────────────────────────────
+
+  async saveSessionV1(data: {
+    userId: string;
+    sessionId: string;
+    problemTitle: string;
+    problemType: string;
+    extractedText: string;
+    explanation: string;
+    keyPoints: string[];
+    concepts: string[];
+    homework: any[];
+    quiz: any;
+    memoryUpdate: any;
+  }): Promise<{ id: string }> {
+    const formData = new FormData();
+    Object.entries(data).forEach(([k, v]) => formData.append(k, typeof v === 'string' ? v : JSON.stringify(v)));
+    const res = await fetch(`${BASE_URL}/api/tutor/sessions`, {
+      method: 'POST',
+      body: formData,
+    });
+    return res.json();
+  },
+
+  async listSessionsV1(userId: string, limit = 20): Promise<{ sessions: any[] }> {
+    const res = await fetch(`${BASE_URL}/api/tutor/sessions?userId=${encodeURIComponent(userId)}&limit=${limit}`);
+    return res.json();
+  },
+
+  async getMemory(userId: string): Promise<{
+    weakTopics: string[];
+    strongTopics: string[];
+    recentTopics: string[];
+    totalSessions: number;
+    streak: number;
+  }> {
+    const res = await fetch(`${BASE_URL}/api/tutor/stats?userId=${encodeURIComponent(userId)}`);
+    if (!res.ok) return { weakTopics: [], strongTopics: [], recentTopics: [], totalSessions: 0, streak: 0 };
+    const data = await res.json();
+    return {
+      weakTopics: data.weakTopics || [],
+      strongTopics: data.strongTopics || [],
+      recentTopics: data.topTopics?.map((t: any) => t[0]) || [],
+      totalSessions: data.totalSessions || 0,
+      streak: data.streak || 0,
+    };
+  },
+
+  async teachDoubtStream(wsUrl: string): Promise<WebSocket> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => resolve(ws);
+      ws.onerror = () => reject(new Error('WebSocket connection failed'));
+    });
   },
 };

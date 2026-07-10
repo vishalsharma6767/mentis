@@ -69,8 +69,6 @@ export class EmotionEngine {
   setFromPhase(phase: LiveLessonPhase): void {
     switch (phase) {
       case 'greeting':
-        this.setEmotion('warm' as EmotionType, 0.8);
-        // greeting -> warmth/excitement
         this._current = this._createEmotion('excitement', 0.7, 1500);
         break;
       case 'explaining':
