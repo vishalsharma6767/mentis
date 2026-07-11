@@ -132,6 +132,7 @@ class BaseProvider(ABC):
         messages: list[dict[str, Any]],
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        expect_json: bool = False,
     ) -> LLMResponse:
         """Send messages to the LLM and return a structured response."""
         ...
@@ -202,6 +203,7 @@ class GroqProvider(BaseProvider):
         messages: list[dict[str, Any]],
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        expect_json: bool = False,
     ) -> LLMResponse:
         if not self.config.api_key:
             raise AIProviderError(provider='groq', message='API key not configured')
@@ -209,12 +211,15 @@ class GroqProvider(BaseProvider):
         client = self._get_client()
         start = time.monotonic()
 
-        response = await client.chat.completions.create(
+        kwargs = dict(
             model=self.config.model,
             messages=messages,
             max_tokens=max_tokens or self.config.max_tokens,
             temperature=temperature if temperature is not None else self.config.temperature,
         )
+        if expect_json:
+            kwargs['response_format'] = {'type': 'json_object'}
+        response = await client.chat.completions.create(**kwargs)
 
         latency = (time.monotonic() - start) * 1000
         content = response.choices[0].message.content or ''
@@ -267,6 +272,7 @@ class GeminiProvider(BaseProvider):
         messages: list[dict[str, Any]],
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        expect_json: bool = False,
     ) -> LLMResponse:
         if not self.config.api_key:
             raise AIProviderError(provider='gemini', message='API key not configured')
@@ -347,6 +353,7 @@ class OpenAIProvider(BaseProvider):
         messages: list[dict[str, Any]],
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        expect_json: bool = False,
     ) -> LLMResponse:
         if not self.config.api_key:
             raise AIProviderError(provider=self.config.provider.value, message='API key not configured')
@@ -354,12 +361,15 @@ class OpenAIProvider(BaseProvider):
         client = self._get_client()
         start = time.monotonic()
 
-        response = await client.chat.completions.create(
+        kwargs = dict(
             model=self.config.model,
             messages=messages,
             max_tokens=max_tokens or self.config.max_tokens,
             temperature=temperature if temperature is not None else self.config.temperature,
         )
+        if expect_json:
+            kwargs['response_format'] = {'type': 'json_object'}
+        response = await client.chat.completions.create(**kwargs)
 
         latency = (time.monotonic() - start) * 1000
         content = response.choices[0].message.content or ''
@@ -711,17 +721,23 @@ class AIGateway:
                         messages=messages,
                         max_tokens=max_tokens,
                         temperature=temperature,
+                        expect_json=expect_json,
                     )
 
                     if expect_json:
                         parsed = _extract_json(response.text)
                         if parsed is not None:
                             response.text = json.dumps(parsed, ensure_ascii=False)
-                        else:
+                        elif response.text.strip():
                             log.warning(
                                 'json_extract_failed',
                                 provider=inst.name.value,
-                                preview=response.text[:150],
+                                attempt=attempt,
+                                preview=response.text[:200],
+                            )
+                            raise ValueError(
+                                f'{inst.name.value} returned non-JSON response (attempt {attempt}): '
+                                f'{response.text[:200]}'
                             )
 
                     log.info(
