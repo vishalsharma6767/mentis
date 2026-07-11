@@ -247,22 +247,34 @@ class SolveDoubtUseCase(BaseUseCase):
 
         # Planner
         await self._progress(progress_cb, 'planning_lesson', 'Planning lesson')
-        plan = await self._run_planner(vision, context, provider, monitor)
+        try:
+            plan = await self._run_planner(vision, context, provider, monitor)
+        except Exception as exc:
+            log.error('pipeline_failed_planner', error=str(exc)[:300])
+            return self._error_response('I had trouble planning this lesson. Please try again.', monitor)
 
         # Teacher
         await self._progress(progress_cb, 'teaching', 'Teaching the concept')
-        teacher_output = await self._run_teacher(
-            plan, vision, context, student_message, language,
-            emotion, provider, monitor,
-        )
-        if teacher_output is None:
-            return self._fallback_response(language)
+        try:
+            teacher_output = await self._run_teacher(
+                plan, vision, context, student_message, language,
+                emotion, provider, monitor,
+            )
+        except Exception as exc:
+            log.error('pipeline_failed_teacher', error=str(exc)[:300])
+            return self._error_response(
+                f'I ran into an issue while teaching. {_fallback_explanation(vision)}',
+                monitor,
+            )
 
         # Critic + revision
-        teacher_output = await self._run_critic_loop(
-            teacher_output, plan, vision, context, student_message,
-            language, emotion, provider, monitor,
-        )
+        try:
+            teacher_output = await self._run_critic_loop(
+                teacher_output, plan, vision, context, student_message,
+                language, emotion, provider, monitor,
+            )
+        except Exception as exc:
+            log.error('pipeline_failed_critic', error=str(exc)[:300])
 
         # Coach
         await self._progress(progress_cb, 'adapting', 'Adapting to you')
@@ -278,9 +290,16 @@ class SolveDoubtUseCase(BaseUseCase):
 
         # Composer
         await self._progress(progress_cb, 'composing', 'Composing response')
-        response = await self._run_composer(
-            teacher_output, language, coaching, monitor,
-        )
+        try:
+            response = await self._run_composer(
+                teacher_output, language, coaching, monitor,
+            )
+        except Exception as exc:
+            log.error('pipeline_failed_composer', error=str(exc)[:300])
+            return self._error_response(
+                teacher_output.response.explanation or 'Please try asking your doubt again.',
+                monitor,
+            )
 
         return response
 
@@ -300,25 +319,21 @@ class SolveDoubtUseCase(BaseUseCase):
         context: UnifiedStudentContext,
         provider: LLMProvider,
         monitor: PipelineMonitor,
-    ) -> Optional[PlannerOutput]:
-        try:
-            student_ctx = self._build_student_context(context)
-            result = await monitor.run(
-                'planner',
-                lambda: self.planner.plan(vision, student_ctx, provider),
-                steps='?',
-            )
-            if result:
-                log.info('planner_done', steps=len(result.lesson_plan.steps))
-                if self.dialogue._total_steps == 0:
-                    self.dialogue.start_lesson(
-                        len(result.lesson_plan.steps),
-                        result.lesson_plan.topic,
-                    )
-            return result
-        except Exception:
-            monitor.skip('planner_fallback', 'planner failed')
-            return None
+    ) -> PlannerOutput:
+        student_ctx = self._build_student_context(context)
+        result = await monitor.run(
+            'planner',
+            lambda: self.planner.plan(vision, student_ctx, provider),
+            steps='?',
+        )
+        if result:
+            log.info('planner_done', steps=len(result.lesson_plan.steps))
+            if self.dialogue._total_steps == 0:
+                self.dialogue.start_lesson(
+                    len(result.lesson_plan.steps),
+                    result.lesson_plan.topic,
+                )
+        return result
 
     async def _run_teacher(
         self,
@@ -331,32 +346,27 @@ class SolveDoubtUseCase(BaseUseCase):
         provider: LLMProvider,
         monitor: PipelineMonitor,
         revision_hint: str = '',
-    ) -> Optional[TeacherOutput]:
-        try:
-            student_ctx = self._build_student_context(context)
-            step_index = self.dialogue.current_step
-            dialogue_ctx = self.dialogue.to_system_context()
-            result = await monitor.run(
-                'teacher',
-                lambda: self.teacher.teach(
-                    step_index=step_index,
-                    plan=plan,
-                    vision=vision,
-                    student=student_ctx,
-                    student_message=student_message,
-                    emotion=emotion,
-                    language=language,
-                    dialogue_context=dialogue_ctx,
-                    revision_hint=revision_hint,
-                    provider=provider,
-                ),
-                step=step_index,
-            )
-            return result
-        except Exception as exc:
-            log.error('teacher_failed', error=str(exc)[:200])
-            monitor.skip('teacher_fallback', str(exc)[:100])
-            return None
+    ) -> TeacherOutput:
+        student_ctx = self._build_student_context(context)
+        step_index = self.dialogue.current_step
+        dialogue_ctx = self.dialogue.to_system_context()
+        result = await monitor.run(
+            'teacher',
+            lambda: self.teacher.teach(
+                step_index=step_index,
+                plan=plan,
+                vision=vision,
+                student=student_ctx,
+                student_message=student_message,
+                emotion=emotion,
+                language=language,
+                dialogue_context=dialogue_ctx,
+                revision_hint=revision_hint,
+                provider=provider,
+            ),
+            step=step_index,
+        )
+        return result
 
     async def _run_critic_loop(
         self,
@@ -375,20 +385,23 @@ class SolveDoubtUseCase(BaseUseCase):
                 'critic',
                 lambda: self.critic.review(teacher_output, provider),
             )
-            if critic_result and not critic_result.passed:
-                log.info('revision_needed',
-                         issues=len(critic_result.feedback.revision_requests))
+        except Exception:
+            monitor.skip('critic', 'critic failed, proceeding without review')
+            return teacher_output
+
+        if critic_result and not critic_result.passed:
+            log.info('revision_needed',
+                     issues=len(critic_result.feedback.revision_requests))
+            try:
                 revised = await self._run_teacher(
                     plan, vision, context, student_message, language,
                     emotion, provider, monitor,
                     revision_hint=critic_result.feedback.comments[:300],
                 )
-                if revised:
-                    return revised
-            return teacher_output
-        except Exception:
-            monitor.skip('critic', 'critic failed')
-            return teacher_output
+                return revised
+            except Exception as exc:
+                log.warning('revision_teacher_failed', error=str(exc)[:200])
+        return teacher_output
 
     async def _run_coach(
         self,
@@ -408,8 +421,9 @@ class SolveDoubtUseCase(BaseUseCase):
                 ),
             )
             return result
-        except Exception:
-            monitor.skip('coach', 'coach failed')
+        except Exception as exc:
+            log.warning('coach_failed', error=str(exc)[:100])
+            monitor.skip('coach', str(exc)[:100])
             return CoachingDecision(adaptation='continue', confidence=0.5)
 
     async def _run_composer(
@@ -464,12 +478,22 @@ class SolveDoubtUseCase(BaseUseCase):
         )
 
     @staticmethod
-    def _fallback_response(language: TeachingLanguage) -> TeacherResponse:
+    def _error_response(message: str, monitor: PipelineMonitor) -> TeacherResponse:
+        log.error('pipeline_failed_returning_error', message=message)
         return TeacherResponse(
+            explanation=message,
+            key_points=['Please try asking your doubt again'],
+            checkpoints=['Did you understand the question?'],
             speech=None,
             board_actions=[],
             ar_instructions=[],
         )
+
+
+def _fallback_explanation(vision: VisionOutput) -> str:
+    raw = (vision.raw_text or '')[:300].strip()
+    topic_str = ', '.join(vision.topics[:2]) if vision.topics else 'this topic'
+    return f'Main {topic_str} ke baare mein samjha raha hoon. {raw}'
 
 
 def _parse_level(level: str) -> Difficulty:
