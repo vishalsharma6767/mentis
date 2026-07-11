@@ -353,24 +353,65 @@ class TeacherAgent:
         student: StudentContext,
         language: TeachingLanguage,
     ) -> TeacherOutput:
-        """Generate a safe fallback teaching response when the LLM call fails."""
+        """Generate a contextual fallback using vision.raw_text directly."""
         log.info('teacher_using_fallback', step=step_index)
 
-        explanation = (
-            f'Chaliye is step ko samajhte hain. {vision.raw_text[:300]} '
-            f'Aapko kya samajh mein aaya? Mujhe batao, main aapki madad karunga.'
-        ) if step is None else step.explanation
+        raw = vision.raw_text[:500].strip()
+        subject_name = vision.subject.value.capitalize()
+        topic_list = vision.topics[:3] if vision.topics else []
+        topic_str = ', '.join(topic_list) if topic_list else subject_name
+
+        if step and step.explanation:
+            explanation = step.explanation
+        else:
+            lines = [
+                f'Aapne jo problem poochhi hai, uske baare mein baat karte hain.',
+                f'',
+                f'Problem: {raw}',
+                f'',
+                f'Yeh {subject_name} ka question hai. Ismein {topic_str} se related concepts hain.',
+            ]
+            if student.level.value in ('beginner', 'elementary'):
+                lines.append('Pehle basic concepts ko samajhte hain, phir step by step aage badhenge.')
+            else:
+                lines.append('Hum is problem ko step by step solve karenge.')
+            lines.extend([
+                f'',
+                f'Step 1: Problem ko dhyan se padhein — samjhein ki kya poochha gaya hai.',
+                f'Step 2: Jo information di gayi hai, use identify karein.',
+                f'Step 3: Formula ya concept apply karke solution nikaalein.',
+                f'Step 4: Answer ko verify karein.',
+                f'',
+                f'Kya aapne kabhi aisa sawaal pehle solve kiya hai? Agar nahi, toh chinta mat karo — main aapko har step samjhaunga.',
+            ])
+            explanation = '\n'.join(lines)
+
+        weaknesses = ', '.join(student.weak_topics[:3]) if student.weak_topics else 'general concepts'
+        key_points = [
+            f'Yeh {topic_str} ka problem hai',
+            f'Dhyan se di gayi information ko padhein',
+            f'Step by step approach use karein',
+            f'Answer ko verify karna mat bhoolen',
+        ]
+        checkpoints = [
+            f'Kya aapko problem samajh aa gayi?',
+            f'Kya aap bata sakte hain ki kis concept ki zaroorat hai?',
+            f'Koi step hai jo mushkil lag raha hai?',
+        ]
+        examples = [f'{topic_str} se related practice problem: "{raw[:100]}..." Is tarah ke questions mein pehle formula pehchaan na zaroori hai.']
+        analogy = f'{topic_str} ko samajhne ke liye, real life example lete hain. Jaise aap roz {weaknesses.split(",")[0] if weaknesses else "cheezein"} face karte hain, waise hi is problem mein bhi same concept apply hota hai.'
 
         response = TeacherResponse(
             explanation=explanation,
-            key_points=['Is problem ko step by step samjhenge'],
-            checkpoints=['Kya aapko yeh samajh mein aaya?'],
-            examples=[],
-            analogy='Real life example se samajhte hain',
+            key_points=key_points,
+            checkpoints=checkpoints,
+            examples=examples,
+            analogy=analogy,
             language_hint=language.value,
             speech=None,
             board_actions=step.board_actions if step and hasattr(step, 'board_actions') else [],
             memory_update=MemoryUpdate(topics_covered=vision.topics),
+            ask_doubts=True,
         )
 
         topic = vision.topics[0] if vision.topics else 'General'

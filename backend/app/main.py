@@ -28,6 +28,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: startup and shutdown hooks."""
     log.info('app_starting', environment=settings.environment.value)
     await initialize_database()
+
+    # ── Log API key availability ──────────────────────────────────────
+    import os
+    key_vars = ['GROQ_API_KEY', 'GEMINI_API_KEY', 'OPENROUTER_API_KEY', 'OPENAI_API_KEY']
+    for var in key_vars:
+        env_val = os.environ.get(var, '')
+        settings_val = getattr(settings, var.lower(), '')
+        log.info('env_check', var=var,
+                 in_env=bool(env_val),
+                 in_settings=bool(settings_val),
+                 env_len=len(env_val),
+                 settings_len=len(settings_val))
+
+    # ── Log gateway providers ─────────────────────────────────────────
+    try:
+        from app.ai.gateway import AIGateway
+        gw = await AIGateway.get_instance()
+        providers = [p.value for p in gw.available_providers]
+        log.info('gateway_providers_initialised', providers=providers, count=len(providers))
+    except Exception as exc:
+        log.warning('gateway_init_failed', error=str(exc))
+
     yield
     await dispose_database()
     log.info('app_stopped')
@@ -68,8 +90,21 @@ app.include_router(health_v1.router)
 # ── Root health check ─────────────────────────────────────────────────
 @app.get('/health', tags=['health'])
 async def health() -> dict:
+    providers = []
+    groq_configured = False
+    try:
+        from app.ai.gateway import AIGateway
+        gw = await AIGateway.get_instance()
+        providers = [p.value for p in gw.available_providers]
+        groq_configured = 'groq' in providers
+    except Exception:
+        pass
+
     return {
         'status': 'ok',
         'version': settings.app_version,
         'environment': settings.environment.value,
+        'providers': providers,
+        'groq_configured': groq_configured,
+        'groq_key_set': bool(settings.groq_api_key),
     }

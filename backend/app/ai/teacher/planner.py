@@ -221,41 +221,56 @@ class PlannerAgent:
         )
 
     def _fallback_plan(self, vision: VisionOutput, student: StudentContext) -> PlannerOutput:
-        """Generate a safe default plan when the LLM call fails."""
+        """Generate a contextual fallback plan using vision.raw_text directly."""
         log.info('planner_using_fallback', subject=vision.subject.value)
+
+        raw = vision.raw_text[:400].strip()
+        subject_name = vision.subject.value.capitalize()
+        topic_list = vision.topics[:3] if vision.topics else []
+        topic_str = ', '.join(topic_list) if topic_list else subject_name
+        weak_str = ', '.join(student.weak_topics[:3]) if student.weak_topics else 'basic concepts'
 
         steps = [
             LessonStep(
                 phase=LessonPhase.OBSERVE,
-                title='Problem ko dhyan se dekhte hain',
-                explanation=f'Chaliye is {vision.subject.value} problem ko step by step solve karte hain. '
-                            f'Pehle problem ko dhyan se padhte hain aur samajhte hain ki kya poochha gaya hai.',
+                title=f'{topic_str} — problem samjhte hain',
+                explanation=f'Aapne {subject_name} ka sawaal poochha hai: "{raw[:200] if len(raw) > 200 else raw}". '
+                            f'Pehle hum problem ko dhyan se padhenge aur samjhenge ki kya poochha gaya hai. '
+                            f'Ismein {topic_str} se related concepts hain.',
                 duration_seconds=45,
+                board_actions=[],
             ),
             LessonStep(
                 phase=LessonPhase.CONCEPT,
-                title='Basic concept samajhte hain',
-                explanation='Is problem ko solve karne ke liye humein kuch basic concepts ki zaroorat hai. '
-                            'Chaliye pehle unhe samajhte hain.',
+                title=f'Zaroori concepts — {topic_str}',
+                explanation=f'Is problem ko solve karne ke liye {topic_str} ki samajh zaroori hai. '
+                            f'{weak_str} par dhyan denge kyunki yahan aapko thodi practice ki zaroorat hai. '
+                            f'Pehle basic rules ko revise karte hain, phir problem par aate hain.',
                 duration_seconds=60,
             ),
             LessonStep(
                 phase=LessonPhase.STEP_BY_STEP,
-                title='Step by step solution',
-                explanation='Ab hum step by step problem ko solve karte hain. '
-                            'Har step ko dhyan se samjhiye.',
+                title=f'Step by step — {topic_str}',
+                explanation=f'Ab hum step by step is problem ko solve karenge. '
+                            f'Har step ko dhyan se samjhiye. Agar koi step samajh na aaye toh ruk kar poochh sakte hain. '
+                            f'Hum dhairy se ek-ek kadam badhenge.',
                 duration_seconds=90,
+                board_actions=[],
             ),
             LessonStep(
                 phase=LessonPhase.CHECKPOINT,
-                title='Samajh aa raha hai?',
-                explanation='Kya aapko samajh mein aaya? Agar koi doubt ho to poochhiye.',
+                title='Kya samajh aa raha hai?',
+                explanation=f'Kya aapko ab tak ka explanation samajh mein aaya? '
+                            f'Maine {topic_str} ke baare mein bataya. '
+                            f'Agar koi doubt ho toh abhi poochh lijiye — main phir se samjhaunga.',
                 duration_seconds=20,
             ),
             LessonStep(
                 phase=LessonPhase.SUMMARY,
-                title='Aaj humne kya seekha',
-                explanation='Chaliye ek baar revise karte hain ki aaj humne kya seekha.',
+                title=f'{topic_str} — aaj humne kya seekha',
+                explanation=f'Chaliye ek baar revise karte hain. Aaj humne {topic_str} ke baare mein seekha. '
+                            f'Problem tha: {raw[:150 if len(raw) > 150 else len(raw)]}. '
+                            f'Humne step by step approach use kiya. Ghar par practice zaroor karein.',
                 duration_seconds=30,
             ),
         ]
@@ -267,12 +282,13 @@ class PlannerAgent:
             steps=steps,
             estimated_total_duration=sum(s.duration_seconds for s in steps),
             key_concepts=vision.topics,
+            prerequisite_topics=student.weak_topics[:3],
         )
 
         return PlannerOutput(
             lesson_plan=plan,
             teaching_strategy='step_by_step',
-            adaptations=['simplify_language', 'more_examples'],
+            adaptations=['simplify_language', 'more_examples', 'focus_on_weak_areas'],
         )
 
     # ── Helpers ────────────────────────────────────────────────────────

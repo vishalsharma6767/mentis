@@ -491,9 +491,17 @@ async def _run_and_stream(
     await _send_json(ws, {'type': 'thinking', 'duration_ms': 400})
     await asyncio.sleep(0.2)
 
+    async def _on_progress(phase: str, detail: str) -> None:
+        """Send progress update to the frontend WebSocket."""
+        try:
+            await _send_json(ws, {'type': 'processing', 'phase': phase, 'detail': detail})
+        except Exception:
+            pass
+
     result: TeacherResponse = await orchestrator.execute(
         context=context,
         student_message=context.vision.raw_text,
+        progress_cb=_on_progress,
     )
 
     if result.explanation:

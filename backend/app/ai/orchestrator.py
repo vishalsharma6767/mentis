@@ -15,6 +15,7 @@ decides whether to retry, skip, or abort — it never crashes.
 """
 
 import time
+from collections.abc import Callable, Coroutine
 from typing import Any, Optional
 
 from app.ai.context import UnifiedStudentContext
@@ -42,6 +43,9 @@ from app.core.constants import ConfidenceLevel, TeachingLanguage
 from app.core.events import EventBus, EventType
 from app.core.exceptions import AgentExecutionError
 from app.core.logger import get_logger
+
+# Optional progress callback type
+ProgressCb = Optional[Callable[[str, str], Coroutine[Any, Any, None]]]
 
 log = get_logger(__name__)
 
@@ -90,6 +94,7 @@ class TeacherOrchestrator:
         image_base64: Optional[str] = None,
         language: TeachingLanguage = TeachingLanguage.HINGLISH,
         provider: Optional[LLMProvider] = None,
+        progress_cb: ProgressCb = None,
     ) -> TeacherResponse:
         """Process a single student turn through the full pipeline.
 
@@ -99,6 +104,7 @@ class TeacherOrchestrator:
             image_base64: Optional base64-encoded camera frame.
             language: Output language preference.
             provider: Optional LLM provider override.
+            progress_cb: Optional async callback(phase, detail) for WS progress.
 
         Returns:
             Structured TeacherResponse for the frontend.
@@ -108,6 +114,14 @@ class TeacherOrchestrator:
                  user=context.profile.user_id,
                  subject=context.vision.subject.value,
                  topic=', '.join(context.vision.topics[:2]))
+
+        # Gateway provider status
+        try:
+            gw = await AIGateway.get_instance()
+            available = [p.value for p in gw.available_providers]
+            log.info('orchestrator_available_providers', providers=available, count=len(available))
+        except Exception as exc:
+            log.warning('orchestrator_gateway_check', error=str(exc))
 
         # ── 1. Emotion Detection ───────────────────────────────────────
         emotion, emotion_conf = await detect_emotion(student_message, use_llm=False)
@@ -131,9 +145,17 @@ class TeacherOrchestrator:
         # ── 3. State: UNDERSTANDING → PLANNING ─────────────────────────
         await self._safe_transition(TeacherState.UNDERSTANDING, context)
 
+        if progress_cb:
+            await progress_cb('planning_lesson', 'Planning lesson structure')
+
+        t0 = time.monotonic()
         plan = await self._execute_planner(vision, context, provider)
+        plan_elapsed = time.monotonic() - t0
         if plan is None:
-            log.warning('orchestrator_plan_fallback')
+            log.warning('orchestrator_plan_fallback', elapsed_ms=round(plan_elapsed * 1000))
+        else:
+            log.info('orchestrator_plan_success', steps=len(plan.lesson_plan.steps),
+                      elapsed_ms=round(plan_elapsed * 1000))
 
         # Initialise dialogue on first run
         if plan and self.dialogue._total_steps == 0:
@@ -143,19 +165,35 @@ class TeacherOrchestrator:
         await self._safe_transition(TeacherState.PLANNING, context)
         await self._publish(EventType.LESSON_PLANNED, context, plan=plan)
 
+        if progress_cb:
+            await progress_cb('teaching', 'Generating teaching explanation')
+
+        t0 = time.monotonic()
         teacher_output = await self._execute_teacher(
             plan, vision, context, student_message, language, emotion, provider,
         )
+        teacher_elapsed = time.monotonic() - t0
         if teacher_output is None:
+            log.error('orchestrator_teacher_failed', elapsed_ms=round(teacher_elapsed * 1000))
             return self._fallback_response(context, language)
+
+        log.info('orchestrator_teacher_success',
+                 explanation_len=len(teacher_output.response.explanation),
+                 elapsed_ms=round(teacher_elapsed * 1000))
 
         # ── 5. State: TEACHING → CHECKING ──────────────────────────────
         await self._safe_transition(TeacherState.TEACHING, context)
         await self._publish(EventType.TEACHING_STARTED, context, output=teacher_output)
 
         # ── 6. Critic Review ───────────────────────────────────────────
+        if progress_cb:
+            await progress_cb('reviewing', 'Reviewing quality')
+
+        t0 = time.monotonic()
         await self._safe_transition(TeacherState.CHECKING, context)
         critic_result = await self._execute_critic(teacher_output, provider)
+        log.info('orchestrator_critic', passed=critic_result.passed if critic_result else 'skipped',
+                 elapsed_ms=round((time.monotonic() - t0) * 1000))
 
         if critic_result and not critic_result.passed:
             log.info('orchestrator_revision_requested',
@@ -164,15 +202,24 @@ class TeacherOrchestrator:
                                 feedback=critic_result.feedback)
 
             # Retry teacher with revision hint
+            t0 = time.monotonic()
             revised_output = await self._execute_teacher(
                 plan, vision, context, student_message, language, emotion, provider,
                 revision_hint=critic_result.feedback.comments[:300],
             )
+            log.info('orchestrator_revision', applied=revised_output is not None,
+                     elapsed_ms=round((time.monotonic() - t0) * 1000))
             if revised_output:
                 teacher_output = revised_output
 
         # ── 7. Coach decision ──────────────────────────────────────────
+        if progress_cb:
+            await progress_cb('adapting', 'Adapting to student')
+
+        t0 = time.monotonic()
         coaching = await self._execute_coach(context, provider)
+        log.info('orchestrator_coach', adaptation=coaching.adaptation,
+                 elapsed_ms=round((time.monotonic() - t0) * 1000))
         await self._publish(EventType.COACH_DECISION_MADE, context, coaching=coaching)
 
         # ── 8. Dialogue record ─────────────────────────────────────────
@@ -184,10 +231,19 @@ class TeacherOrchestrator:
         )
 
         # ── 9. Compose final response ──────────────────────────────────
+        if progress_cb:
+            await progress_cb('composing', 'Composing final response')
+
+        t0 = time.monotonic()
         result = await self._execute_composer(
             teacher_output, context, language, provider,
             coaching=coaching,
         )
+        log.info('orchestrator_compose_done',
+                 board_actions=len(result.board_actions),
+                 has_quiz=result.quiz is not None,
+                 has_lesson_plan=result.lesson_plan is not None,
+                 elapsed_ms=round((time.monotonic() - t0) * 1000))
 
         # ── 10. State: SUMMARIZING → SESSION_COMPLETE ──────────────────
         if context.session.session_id:
