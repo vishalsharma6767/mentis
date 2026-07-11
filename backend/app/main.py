@@ -33,8 +33,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     import os
     key_vars = ['GROQ_API_KEY', 'GEMINI_API_KEY', 'OPENROUTER_API_KEY', 'OPENAI_API_KEY']
     for var in key_vars:
-        env_val = os.environ.get(var, '')
-        settings_val = getattr(settings, var.lower(), '')
+        env_val = os.environ.get(var, '') or ''
+        settings_val = getattr(settings, var.lower(), None) or ''
         log.info('env_check', var=var,
                  in_env=bool(env_val),
                  in_settings=bool(settings_val),
