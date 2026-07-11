@@ -366,7 +366,14 @@ class TeacherAgent:
         topic_str = ', '.join(topic_list) if topic_list else subject_name
 
         if step and step.explanation:
-            explanation = step.explanation
+            base = step.explanation
+            extra_lines = [
+                f'\n\nAaiye, is concept ko aur detail mein samajhte hain. ',
+                f'{topic_str} ke baare mein hum step by step padhenge. ',
+                f'Problem yeh hai: {raw[:200]}',
+                f'\nDhyan se padhiye aur agar koi doubt ho toh poochh sakte hain. Main aapko har step samjhaunga.',
+            ]
+            explanation = base + ''.join(extra_lines)
         else:
             lines = [
                 f'Aapne jo problem poochhi hai, uske baare mein baat karte hain.',
