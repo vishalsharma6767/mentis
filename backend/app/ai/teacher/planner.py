@@ -101,8 +101,8 @@ class PlannerAgent:
                     messages=messages,
                     provider=provider,
                     expect_json=True,
-                    max_tokens=8192,
-                    temperature=0.7,
+                    max_tokens=2048,
+                    temperature=0.2,
                     use_cache=True,
                 )
 
