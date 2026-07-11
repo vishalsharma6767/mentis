@@ -26,6 +26,7 @@ Usage::
 import asyncio
 import hashlib
 import json
+import os
 import re
 import time
 from abc import ABC, abstractmethod
@@ -578,6 +579,8 @@ class AIGateway:
     def _load_configs(self) -> list[ProviderConfig]:
         chain: list[ProviderConfig] = []
 
+        log.info('gateway_load_configs', groq_key_set=bool(settings.groq_api_key), env_groq='GROQ_API_KEY' in os.environ)
+
         if settings.groq_api_key:
             chain.append(ProviderConfig(
                 provider=LLMProvider.GROQ,
@@ -621,15 +624,17 @@ class AIGateway:
                 priority=3,
             ))
 
-        ollama_url = getattr(settings, 'ollama_base_url', 'http://localhost:11434')
-        chain.append(ProviderConfig(
-            provider=LLMProvider.OLLAMA,
-            model=getattr(settings, 'ollama_model', 'llama3'),
-            base_url=ollama_url,
-            max_tokens=4096,
-            temperature=0.7,
-            priority=4,
-        ))
+        ollama_api_key = getattr(settings, 'ollama_api_key', None) or os.environ.get('OLLAMA_API_KEY')
+        if ollama_api_key:
+            chain.append(ProviderConfig(
+                provider=LLMProvider.OLLAMA,
+                model=getattr(settings, 'ollama_model', 'llama3'),
+                api_key=ollama_api_key,
+                base_url=getattr(settings, 'ollama_base_url', 'http://localhost:11434'),
+                max_tokens=4096,
+                temperature=0.7,
+                priority=4,
+            ))
 
         return sorted(chain, key=lambda p: p.priority)
 
@@ -710,17 +715,14 @@ class AIGateway:
 
                     if expect_json:
                         parsed = _extract_json(response.text)
-                        if parsed is None:
+                        if parsed is not None:
+                            response.text = json.dumps(parsed, ensure_ascii=False)
+                        else:
                             log.warning(
                                 'json_extract_failed',
                                 provider=inst.name.value,
                                 preview=response.text[:150],
                             )
-                            raise AIProviderError(
-                                provider=inst.name.value,
-                                message='Failed to extract JSON from response',
-                            )
-                        response.text = json.dumps(parsed, ensure_ascii=False)
 
                     log.info(
                         'gateway_success',
