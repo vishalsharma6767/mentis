@@ -1,7 +1,7 @@
 """Health check and diagnostic endpoints."""
 
 import asyncio
-import json
+import json as _json
 import time as time_module
 
 from fastapi import APIRouter
@@ -77,16 +77,16 @@ async def test_groq():
 
 @router.get('/health/pipeline-test')
 async def test_pipeline():
-    """Run the EXACT planner prompt through Groq and show raw result."""
+    """Run the EXACT planner + teacher prompts and show raw results."""
     from app.ai.gateway import AIGateway
     from app.ai.teacher.personality import TeacherPersonality
-    from app.ai.teacher.prompts import planner_agent_prompt
+    from app.ai.teacher.prompts import planner_agent_prompt, teacher_agent_prompt
     from app.core.constants import Subject, Difficulty
 
     personality = TeacherPersonality()
-    prompt = planner_agent_prompt(personality)
+    planner_prompt = planner_agent_prompt(personality)
+    teacher_prompt = teacher_agent_prompt(personality)
 
-    import json as _json
     input_data = _json.dumps({
         'problem': {
             'text': 'Test physics problem about force and motion',
@@ -110,46 +110,95 @@ async def test_pipeline():
         },
     }, indent=2)
 
-    messages = [
-        {'role': 'system', 'content': prompt},
-        {'role': 'user', 'content': input_data},
-    ]
-
     result = {
-        'prompt_chars': len(prompt),
-        'input_chars': len(input_data),
-        'total_chars': len(prompt) + len(input_data),
-        'call': None,
-        'extracted': None,
+        'planner': None,
+        'teacher': None,
         'error': None,
     }
 
+    gw = await AIGateway.get_instance()
+    providers_available = [p.value for p in gw.available_providers]
+
+    # ── Planner test ──────────────────────────────────────────────
+    planner_msgs = [
+        {'role': 'system', 'content': planner_prompt},
+        {'role': 'user', 'content': input_data},
+    ]
     try:
-        gw = await AIGateway.get_instance()
         t0 = time_module.monotonic()
         resp = await gw.execute(
-            messages=messages,
+            messages=planner_msgs,
             expect_json=True,
             max_tokens=2048,
             temperature=0.2,
         )
-        result['call'] = {
+        plan_result = {
             'ok': True,
-            'text_preview': resp.text[:500],
+            'text_preview': resp.text[:400],
             'text_len': len(resp.text),
             'latency_ms': round((time_module.monotonic() - t0) * 1000),
             'model': resp.model,
+            'provider': resp.provider.value if hasattr(resp.provider, 'value') else str(resp.provider),
             'input_tokens': resp.input_tokens,
             'output_tokens': resp.output_tokens,
         }
         from app.utils.json_utils import extract_json as _extract_json
         parsed = _extract_json(resp.text)
-        result['extracted'] = parsed is not None
+        plan_result['parsed_ok'] = parsed is not None
         if parsed:
             steps = parsed.get('lesson_plan', {}).get('steps', [])
-            result['step_count'] = len(steps)
-            result['first_step_explanation'] = (steps[0]['explanation'][:200] if steps else 'no steps')
+            plan_result['step_count'] = len(steps)
+            plan_result['first_step'] = steps[0].get('explanation', '')[:200] if steps else 'no steps'
+        result['planner'] = plan_result
     except Exception as e:
-        result['error'] = str(e)[:500]
+        result['planner'] = {'ok': False, 'error': str(e)[:400]}
+
+    # ── Teacher test ──────────────────────────────────────────────
+    teacher_input = _json.dumps({
+        'step_index': 0,
+        'lesson_plan': {
+            'subject': 'physics',
+            'topic': 'Force and Motion',
+            'difficulty': 'intermediate',
+            'steps': [
+                {'phase': 'observe', 'title': 'Samajhte hain', 'explanation': 'Problem ko dhyan se padho beta'}
+            ]
+        },
+        'student': {'level': 'intermediate', 'weak_topics': [], 'strong_topics': [], 'confidence': 'medium'},
+        'student_message': 'I have a problem about force',
+        'emotion': 'neutral',
+        'language': 'hinglish',
+    }, indent=2)
+
+    teacher_msgs = [
+        {'role': 'system', 'content': teacher_prompt},
+        {'role': 'user', 'content': teacher_input},
+    ]
+    try:
+        t0 = time_module.monotonic()
+        resp = await gw.execute(
+            messages=teacher_msgs,
+            expect_json=True,
+            max_tokens=2048,
+            temperature=0.2,
+        )
+        teacher_result = {
+            'ok': True,
+            'text_preview': resp.text[:400],
+            'text_len': len(resp.text),
+            'latency_ms': round((time_module.monotonic() - t0) * 1000),
+            'model': resp.model,
+            'provider': resp.provider.value if hasattr(resp.provider, 'value') else str(resp.provider),
+            'input_tokens': resp.input_tokens,
+            'output_tokens': resp.output_tokens,
+        }
+        parsed = _extract_json(resp.text)
+        teacher_result['parsed_ok'] = parsed is not None
+        if parsed:
+            explanation = parsed.get('step', {}).get('explanation', '')
+            teacher_result['explanation_preview'] = explanation[:300]
+        result['teacher'] = teacher_result
+    except Exception as e:
+        result['teacher'] = {'ok': False, 'error': str(e)[:400]}
 
     return result

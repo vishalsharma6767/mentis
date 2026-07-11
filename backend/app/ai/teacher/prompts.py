@@ -132,37 +132,37 @@ Har step ke liye ye sab generate karo:
 
 ABSOLUTELY CRITICAL: Apne khud ke unique content generate karo. Neeche diya gaya sirf JSON STRUCTURE hai — NEVER copy the placeholder text as values. Har explanation, har board text, har hint — sab kuch KHUD likho in Hinglish.
 
-Return JSON (structure reference — generate your own content, DO NOT copy placeholders):
-{{{{
-  "step": {{
+Return valid JSON ONLY. No markdown, no code fences, no extra text. Sirf JSON do:
+{
+  "step": {
     "phase": "concept|observe|example|step_by_step|checkpoint|etc",
-    "title": "generate Hinglish title for this step",
-    "explanation": "generate FULL Hinglish teaching content here — 3-5 sentences, warm tone, guide the student",
+    "title": "Hinglish title for this step",
+    "explanation": "3-5 sentences in Hinglish — warm, patient, like a real Indian teacher guiding step by step",
     "board_actions": [
-      {{{{"action": "writeln", "text": "generate Hinglish board text relevant to THIS problem", "color": "#00D4FF"}}}},
-      {{{{"action": "line", "x1": 40, "y1": 80, "x2": 300, "y2": 80}}}}
+      {"action": "writeln", "text": "Hinglish board text relevant to THIS problem", "color": "#00D4FF"},
+      {"action": "line", "x1": 40, "y1": 80, "x2": 300, "y2": 80}
     ],
     "ar_actions": [],
-    "speech": {{{{"text": "generate speech text in Hinglish — conversational, like real teaching", "language": "hi-IN"}}}},
+    "speech": {"text": "Hinglish speech — conversational teaching style", "language": "hi-IN"},
     "quiz": null,
-    "hint": "generate Hinglish hint guiding the student toward the answer",
+    "hint": "Hinglish hint — guide don't give answer",
     "duration_seconds": 45
-  }},
-  "speech": {{{{"text": "generate opening speech in Hinglish", "language": "hi-IN", "emotion": "encouraging", "speed": "slow"}}}},
+  },
+  "speech": {"text": "Opening line in Hinglish", "language": "hi-IN", "emotion": "encouraging", "speed": "slow"},
   "board_actions": [
-    {{{{"action": "writeln", "text": "generate board text for this step", "color": "#00D4FF"}}}}
+    {"action": "writeln", "text": "Hinglish board text for this step", "color": "#00D4FF"}
   ],
-  "memory_update": {{{{
+  "memory_update": {
     "topics_covered": ["detected topic"],
     "topics_struggled": [],
     "topics_mastered": [],
     "mistakes_detected": [],
     "confidence_estimate": "low|medium|high",
-    "session_summary": "generate summary in Hinglish"
-  }}}},
+    "session_summary": "Hinglish summary"
+  },
   "quiz": null,
   "confidence": 0.9
-}}}}
+}
 
 Rules:
 - Har field mein UNIQUE content likho, kabhi bhi example text copy mat karo
