@@ -295,7 +295,7 @@ async def teach_stream(websocket: WebSocket):
         try:
             await _send_json(websocket, {'type': 'error', 'message': str(exc)[:200]})
         except Exception:
-            pass
+            log.debug('ws_error_send_failed')
 
 
 async def _stream_doubt(
@@ -311,7 +311,7 @@ async def _stream_doubt(
         try:
             await _send_json(ws, {'type': 'processing', 'phase': phase, 'detail': detail})
         except Exception:
-            pass
+            log.debug('progress_cb_send_failed', phase=phase)
     result, report = await usecase.execute(
         text=content, mode=mode, level=level, progress_cb=_cb,
     )
@@ -332,7 +332,7 @@ async def _stream_doubt_image(
         try:
             await _send_json(ws, {'type': 'processing', 'phase': phase, 'detail': detail})
         except Exception:
-            pass
+            log.debug('progress_cb_send_failed', phase=phase)
     result, report = await usecase.execute(
         image_bytes=image_bytes, mode=mode, level=level, progress_cb=_cb,
     )
@@ -353,7 +353,7 @@ async def _stream_lesson(
         try:
             await _send_json(ws, {'type': 'processing', 'phase': phase, 'detail': detail})
         except Exception:
-            pass
+            log.debug('progress_cb_send_failed', phase=phase)
     result, report = await usecase.execute(
         topic=topic, level=level, progress_cb=_cb,
     )
@@ -464,4 +464,4 @@ async def _send_json(ws: WebSocket, data: dict) -> None:
     try:
         await ws.send_json(data)
     except Exception:
-        pass
+        log.warning('ws_send_failed', type=data.get('type', ''))

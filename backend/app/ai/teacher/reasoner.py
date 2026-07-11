@@ -11,7 +11,7 @@ the pipeline uses this module — never calls an LLM directly.
 
 import asyncio
 import json
-import re
+
 from collections.abc import AsyncGenerator
 from typing import Any, Optional
 
@@ -32,42 +32,8 @@ class LLMProvider:
 
 
 def _extract_json(text: str) -> Optional[dict[str, Any]]:
-    """Extract the first JSON object from a string.
-
-    Handles markdown code fences and leading/trailing text.
-    """
-    # Try direct parse first
-    text = text.strip()
-    if text.startswith('{') and text.endswith('}'):
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-    # Try extracting from ```json ... ``` fences
-    match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-
-    # Try finding first { ... } with balanced braces
-    depth = 0
-    start = -1
-    for i, ch in enumerate(text):
-        if ch == '{':
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == '}':
-            depth -= 1
-            if depth == 0 and start >= 0:
-                try:
-                    return json.loads(text[start:i + 1])
-                except json.JSONDecodeError:
-                    pass
-    return None
+    from app.utils.json_utils import extract_json as _shared_extract
+    return _shared_extract(text)
 
 
 async def _call_groq(

@@ -7,10 +7,10 @@ problems, or switch teaching approaches based on student signals.
 
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 from app.ai.gateway import AIGateway, LLMProvider
+from app.utils.json_utils import extract_json
 from app.ai.teacher.personality import TeacherPersonality
 from app.ai.teacher.schemas import CoachingDecision, CoachingSignal, StudentContext
 from app.core.logger import get_logger
@@ -159,7 +159,9 @@ class CoachAgent:
                 use_cache=True,
             )
 
-            result = json.loads(response.text)
+            result = extract_json(response.text)
+            if result is None:
+                raise ValueError('No valid JSON in coach response')
             return CoachingDecision(
                 adaptation=str(result.get('adaptation', 'continue')),
                 confidence=float(result.get('confidence', 0.7)),

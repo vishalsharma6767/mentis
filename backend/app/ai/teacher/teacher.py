@@ -18,10 +18,10 @@ step, exactly like an experienced Indian classroom teacher.
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Optional
 
 from app.ai.gateway import AIGateway, LLMProvider
+from app.utils.json_utils import extract_json
 from app.ai.teacher.personality import TeacherPersonality
 from app.ai.teacher.prompts import teacher_agent_prompt
 from app.ai.teacher.schemas import (
@@ -139,7 +139,7 @@ class TeacherAgent:
                     use_cache=True,
                 )
 
-                parsed = self._try_parse_json(response.text)
+                parsed = extract_json(response.text)
                 if parsed is None:
                     raise ValueError('No valid JSON found in response')
 
@@ -346,44 +346,6 @@ class TeacherAgent:
             student_level=student.level,
             language=language,
         )
-
-    # ── JSON parsing ────────────────────────────────────────────────────
-
-    @staticmethod
-    def _try_parse_json(text: str) -> Optional[dict[str, Any]]:
-        """Extract the first JSON object from a string.
-
-        Tries in order: direct parse, ```json block, first balanced {}.
-        """
-        text = text.strip()
-        if text.startswith('{') and text.endswith('}'):
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                pass
-
-        match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(1).strip())
-            except json.JSONDecodeError:
-                pass
-
-        depth = 0
-        start = -1
-        for i, ch in enumerate(text):
-            if ch == '{':
-                if depth == 0:
-                    start = i
-                depth += 1
-            elif ch == '}':
-                depth -= 1
-                if depth == 0 and start >= 0:
-                    try:
-                        return json.loads(text[start:i + 1])
-                    except json.JSONDecodeError:
-                        pass
-        return None
 
     # ── Fallback ────────────────────────────────────────────────────────
 

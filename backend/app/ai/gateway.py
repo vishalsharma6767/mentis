@@ -27,7 +27,7 @@ import asyncio
 import hashlib
 import json
 import os
-import re
+
 import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
@@ -858,39 +858,6 @@ class AIGateway:
 
 
 def _extract_json(text: str) -> Optional[dict[str, Any]]:
-    """Extract the first JSON object from a string.
+    from app.utils.json_utils import extract_json as _shared_extract
+    return _shared_extract(text)
 
-    Tries in order:
-      1. Direct parse.
-      2. Extract from ```json ... ``` fences.
-      3. Find the first balanced { } block.
-    """
-    text = text.strip()
-    if text.startswith('{') and text.endswith('}'):
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-    match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-
-    depth = 0
-    start = -1
-    for i, ch in enumerate(text):
-        if ch == '{':
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == '}':
-            depth -= 1
-            if depth == 0 and start >= 0:
-                try:
-                    return json.loads(text[start:i + 1])
-                except json.JSONDecodeError:
-                    pass
-    return None

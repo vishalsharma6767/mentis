@@ -20,10 +20,10 @@ Validation:
 
 from __future__ import annotations
 
-import json
 from typing import Any, Optional
 
 from app.ai.gateway import AIGateway, LLMProvider
+from app.utils.json_utils import extract_json
 from app.ai.teacher.schemas import (
     ARPlan,
     CoachingDecision,
@@ -184,7 +184,8 @@ class ResponseComposer:
                 max_tokens=1024,
                 temperature=0.4,
             )
-            polished_text = json.loads(result.text).get('explanation', '')
+            parsed = extract_json(result.text)
+            polished_text = parsed.get('explanation', '') if parsed else ''
             if polished_text:
                 draft.explanation = polished_text
             return draft

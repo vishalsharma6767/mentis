@@ -210,8 +210,8 @@ class SolveDoubtUseCase(BaseUseCase):
                     vo.get('problem_type', 'general'),
                     vo.get('formulas', []),
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug('vision_adapter_fallback_used', error=str(exc)[:100])
 
         subject = Subject.MATH if mode == 'math' else Subject.GENERAL
         return text, subject, [], 'general', []

@@ -150,4 +150,4 @@ class BaseUseCase:
             try:
                 await cb(phase, detail)
             except Exception:
-                pass
+                log.warning('progress_cb_failed', phase=phase)

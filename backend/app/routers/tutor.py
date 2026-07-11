@@ -41,8 +41,14 @@ async def step_help(
     current: str = Form('{}'),
 ):
     problem = {'type': problem_type, 'content': content}
-    completed_list = json.loads(completed)
-    current_dict = json.loads(current)
+    try:
+        completed_list = json.loads(completed)
+    except json.JSONDecodeError:
+        completed_list = []
+    try:
+        current_dict = json.loads(current)
+    except json.JSONDecodeError:
+        current_dict = {}
     help_text = tutor_service.get_step_help(problem, completed_list, current_dict)
     return {'help': help_text}
 

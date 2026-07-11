@@ -8,10 +8,10 @@ threshold.
 
 from __future__ import annotations
 
-import json
 from typing import Any, Optional
 
 from app.ai.gateway import AIGateway, LLMProvider
+from app.utils.json_utils import extract_json
 from app.ai.teacher.prompts import critic_agent_prompt
 from app.ai.teacher.schemas import CriticFeedback, CriticOutput, QualityScore, TeacherOutput
 from app.core.logger import get_logger
@@ -80,7 +80,9 @@ class CriticAgent:
                     use_cache=True,
                 )
 
-                parsed = json.loads(response.text)
+                parsed = extract_json(response.text)
+                if parsed is None:
+                    raise ValueError('No valid JSON found in critic response')
                 feedback = self._parse_feedback(parsed)
                 passed = feedback.passed and (feedback.quality_score.overall >= MINIMUM_PASS_SCORE)
 
