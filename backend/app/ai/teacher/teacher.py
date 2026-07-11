@@ -17,6 +17,7 @@ step, exactly like an experienced Indian classroom teacher.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Optional
 
@@ -159,6 +160,7 @@ class TeacherAgent:
             except Exception as exc:
                 log.warning('teacher_attempt_failed', attempt=attempt, error=str(exc)[:120])
                 if attempt < 3:
+                    await asyncio.sleep(1.5 * attempt)
                     continue
 
         log.error('teacher_all_attempts_failed', step=step_index)

@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     # ── LLM Providers ──────────────────────────────────────────────────
     groq_api_key: str = Field('', alias='GROQ_API_KEY')
     groq_vision_model: str = Field('meta-llama/llama-4-scout-17b-16e-instruct', alias='GROQ_VISION_MODEL')
-    groq_reasoning_model: str = Field('llama-3.3-70b-versatile', alias='GROQ_REASONING_MODEL')
+    groq_reasoning_model: str = Field('llama-3.1-8b-instant', alias='GROQ_REASONING_MODEL')
     groq_max_tokens: int = Field(8192, alias='GROQ_MAX_TOKENS')
     groq_temperature: float = Field(0.7, alias='GROQ_TEMPERATURE')
 

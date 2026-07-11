@@ -15,6 +15,7 @@ Every lesson plan includes:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Optional
 
@@ -124,6 +125,7 @@ class PlannerAgent:
             except Exception as exc:
                 log.warning('planner_attempt_failed', attempt=attempt, error=str(exc)[:120])
                 if attempt < 3:
+                    await asyncio.sleep(1.5 * attempt)
                     continue
 
         log.error('planner_all_attempts_failed')
