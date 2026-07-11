@@ -378,13 +378,15 @@ async def _stream_response(
         })
 
     for action in result.board_actions:
-        d = action.model_dump() if hasattr(action, 'model_dump') else action
-        await _send_json(ws, {'type': 'board', **d})
-        await asyncio.sleep(0.05)
+        d = _safe_unpack(action)
+        if d is not None:
+            await _send_json(ws, {'type': 'board', **d})
+            await asyncio.sleep(0.05)
 
     for instr in result.ar_instructions:
-        d = instr.model_dump() if hasattr(instr, 'model_dump') else instr
-        await _send_json(ws, {'type': 'pointer', **d})
+        d = _safe_unpack(instr)
+        if d is not None:
+            await _send_json(ws, {'type': 'pointer', **d})
 
     if result.key_points:
         await _send_json(ws, {'type': 'key_points', 'points': result.key_points})
@@ -402,14 +404,14 @@ async def _stream_response(
         lp = result.lesson_plan
         await _send_json(ws, {
             'type': 'lesson_plan',
-            'topic': lp.topic,
+            'topic': str(lp.topic),
             'subject': lp.subject.value if hasattr(lp.subject, 'value') else str(lp.subject),
             'difficulty': lp.difficulty.value if hasattr(lp.difficulty, 'value') else str(lp.difficulty),
-            'prerequisites': lp.prerequisite_topics,
-            'key_concepts': lp.key_concepts,
+            'prerequisites': list(lp.prerequisite_topics),
+            'key_concepts': list(lp.key_concepts),
             'total_steps': len(lp.steps),
-            'estimated_duration': lp.estimated_total_duration,
-            'homework': [h.model_dump() if hasattr(h, 'model_dump') else {'title': h.title, 'description': h.description} for h in lp.homework],
+            'estimated_duration': int(lp.estimated_total_duration),
+            'homework': [h.model_dump() if hasattr(h, 'model_dump') else {'title': str(h.title), 'description': str(h.description)} for h in lp.homework],
         })
 
     if result.quiz:
@@ -421,12 +423,13 @@ async def _stream_response(
 
     if result.memory_update:
         m = result.memory_update.model_dump() if hasattr(result.memory_update, 'model_dump') else result.memory_update
-        await _send_json(ws, {'type': 'memory', **m})
+        if isinstance(m, dict):
+            await _send_json(ws, {'type': 'memory', **m})
 
-    if vision_dict:
+    if vision_dict and isinstance(vision_dict, dict):
         topics = vision_dict.get('topics', [])
         if topics:
-            await _send_json(ws, {'type': 'concepts', 'topics': topics})
+            await _send_json(ws, {'type': 'concepts', 'topics': list(topics)})
         await _send_json(ws, {'type': 'scene', **vision_dict})
 
     recommendations = []
@@ -437,6 +440,17 @@ async def _stream_response(
         await _send_json(ws, {'type': 'session_complete', 'session_id': session_id, 'recommendations': recommendations})
 
     await _send_json(ws, {'type': 'done', 'session_id': session_id, 'recommendations': recommendations})
+
+
+def _safe_unpack(item: Any) -> Optional[dict]:
+    """Convert an item to a dict safe for ** unpacking."""
+    if isinstance(item, dict):
+        return item
+    if hasattr(item, 'model_dump'):
+        return item.model_dump()
+    if isinstance(item, BaseModel):
+        return item.model_dump()
+    return None
 
 
 def _decode_base64_image(b64: str) -> bytes:
