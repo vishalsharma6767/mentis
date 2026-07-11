@@ -585,6 +585,16 @@ class AIGateway:
 
         log.info('gateway_load_configs', groq_key_set=bool(settings.groq_api_key), env_groq='GROQ_API_KEY' in os.environ)
 
+        if settings.gemini_api_key:
+            chain.append(ProviderConfig(
+                provider=LLMProvider.GEMINI,
+                model=settings.gemini_model,
+                api_key=settings.gemini_api_key,
+                max_tokens=8192,
+                temperature=0.7,
+                priority=0,
+            ))
+
         if settings.groq_api_key:
             chain.append(ProviderConfig(
                 provider=LLMProvider.GROQ,
@@ -592,16 +602,6 @@ class AIGateway:
                 api_key=settings.groq_api_key,
                 max_tokens=settings.groq_max_tokens,
                 temperature=settings.groq_temperature,
-                priority=0,
-            ))
-
-        if settings.gemini_api_key:
-            chain.append(ProviderConfig(
-                provider=LLMProvider.GEMINI,
-                model=settings.gemini_model,
-                api_key=settings.gemini_api_key,
-                max_tokens=4096,
-                temperature=0.7,
                 priority=1,
             ))
 
