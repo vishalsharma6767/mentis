@@ -230,7 +230,7 @@ class StudentContext(BaseModel):
 class VisionOutput(BaseModel):
     """Output from the Vision Agent."""
     raw_text: str
-    subject: Subject = Subject.MATH
+    subject: Subject = Subject.GENERAL
     difficulty: Difficulty = Difficulty.INTERMEDIATE
     topics: list[str] = Field(default_factory=list)
     problem_type: str = 'general'
