@@ -153,22 +153,36 @@ async def test_pipeline():
     except Exception as e:
         result['planner'] = {'ok': False, 'error': str(e)[:400]}
 
-    # ── Teacher test ──────────────────────────────────────────────
-    teacher_input = _json.dumps({
-        'step_index': 0,
-        'lesson_plan': {
-            'subject': 'physics',
-            'topic': 'Force and Motion',
-            'difficulty': 'intermediate',
-            'steps': [
-                {'phase': 'observe', 'title': 'Samajhte hain', 'explanation': 'Problem ko dhyan se padho beta'}
-            ]
-        },
-        'student': {'level': 'intermediate', 'weak_topics': [], 'strong_topics': [], 'confidence': 'medium'},
-        'student_message': 'I have a problem about force',
-        'emotion': 'neutral',
-        'language': 'hinglish',
-    }, indent=2)
+    # ── Teacher test (EXACT same format as _build_input_prompt) ───
+    parts: list[str] = []
+    parts.append(_json.dumps({'problem': {
+        'text': 'What is the formula for force?',
+        'subject': 'physics', 'difficulty': 'intermediate',
+        'topics': ['force', 'newtons_laws'], 'type': 'word_problem',
+        'formulas': ['F=ma'], 'diagram': None,
+    }}, indent=2))
+    steps_text = '\n'.join([
+        '  Step 1: [observe] Problem ko samjho',
+        '  Step 2: [concept] Force ka concept',
+        '  Step 3: [example] Real life example',
+    ])
+    parts.append(f'Lesson plan:\nStrategy: example_first')
+    parts.append(f'Adaptations: simplify_language, more_examples')
+    parts.append(f'Steps:\n{steps_text}')
+    parts.append(f'Current step to teach: 1 of 3')
+    parts.append(_json.dumps({'current_step': {
+        'phase': 'observe', 'title': 'Problem ko samjho',
+        'explanation': 'Dekhte hain problem kya keh rahi hai',
+        'hint': 'Force aur mass ka relation dekho',
+        'duration_seconds': 45,
+    }}, indent=2))
+    parts.append(_json.dumps({'student': {
+        'level': 'intermediate', 'weak_topics': ['force_diagrams'],
+        'strong_topics': ['basic_math'], 'confidence': 'medium',
+    }, 'student_message': 'What is force formula?', 'emotion': 'neutral', 'language': 'hinglish'}, indent=2))
+    parts.append('Previous dialogue:\nStudent asked about force. Teacher started explaining.')
+    parts.append('Teach this step in Hinglish like an experienced Indian classroom teacher. Never give the final answer.')
+    teacher_input = '\n\n'.join(parts)
 
     teacher_msgs = [
         {'role': 'system', 'content': teacher_prompt},
