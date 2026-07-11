@@ -11,31 +11,16 @@ import json
 import time
 import asyncio
 from typing import Any, Optional
-from io import BytesIO
-
-import numpy as np
-from PIL import Image
 
 from fastapi import APIRouter, UploadFile, File, Form, WebSocket, WebSocketDisconnect, HTTPException
 from pydantic import BaseModel
 
-from app.ai.gateway import AIGateway, LLMProvider
-from app.ai.context import (
-    UnifiedStudentContext,
-    StudentProfile,
-    VisionContext,
-    SessionContext,
-    ContextEngine,
-)
-from app.ai.orchestrator import TeacherOrchestrator
-from app.ai.teacher.schemas import TeacherResponse, VisionOutput
+from app.ai.teacher.schemas import TeacherResponse
 from app.ai.teacher.personality import TeacherPersonality
-from app.ai.vision_intelligence.pipeline import VisionPipeline
-from app.ai.vision_intelligence.adapter import VisionAdapter
-from app.ai.scene_graph.integration import SceneGraphIntegration
 from app.core.events import EventBus, EventType
-from app.core.constants import Subject, Difficulty, TeachingLanguage
 from app.core.logger import get_logger
+from app.use_cases.solve_doubt import SolveDoubtUseCase
+from app.use_cases.teach_topic import TeachTopicUseCase
 
 log = get_logger(__name__)
 
@@ -86,18 +71,31 @@ class TeachResponse(BaseModel):
 
 # ── Singleton wiring ─────────────────────────────────────────────────────────
 
-_orchestrator: Optional[TeacherOrchestrator] = None
+_personality: Optional[TeacherPersonality] = None
+_solve_doubt: Optional[SolveDoubtUseCase] = None
+_teach_topic: Optional[TeachTopicUseCase] = None
 _event_bus: Optional[EventBus] = None
-_vision_pipeline: Optional[VisionPipeline] = None
-_scene_graph: Optional[SceneGraphIntegration] = None
 
 
-def _get_orchestrator() -> TeacherOrchestrator:
-    global _orchestrator
-    if _orchestrator is None:
-        personality = TeacherPersonality()
-        _orchestrator = TeacherOrchestrator(personality=personality)
-    return _orchestrator
+def _get_personality() -> TeacherPersonality:
+    global _personality
+    if _personality is None:
+        _personality = TeacherPersonality()
+    return _personality
+
+
+def _get_solve_doubt() -> SolveDoubtUseCase:
+    global _solve_doubt
+    if _solve_doubt is None:
+        _solve_doubt = SolveDoubtUseCase(personality=_get_personality())
+    return _solve_doubt
+
+
+def _get_teach_topic() -> TeachTopicUseCase:
+    global _teach_topic
+    if _teach_topic is None:
+        _teach_topic = TeachTopicUseCase(personality=_get_personality())
+    return _teach_topic
 
 
 def _get_event_bus() -> EventBus:
@@ -105,20 +103,6 @@ def _get_event_bus() -> EventBus:
     if _event_bus is None:
         _event_bus = EventBus()
     return _event_bus
-
-
-def _get_vision_pipeline() -> VisionPipeline:
-    global _vision_pipeline
-    if _vision_pipeline is None:
-        _vision_pipeline = VisionPipeline()
-    return _vision_pipeline
-
-
-def _get_scene_graph() -> SceneGraphIntegration:
-    global _scene_graph
-    if _scene_graph is None:
-        _scene_graph = SceneGraphIntegration()
-    return _scene_graph
 
 
 def _response_to_teach(resp: TeacherResponse, session_id: str) -> TeachResponse:
@@ -140,163 +124,22 @@ def _response_to_teach(resp: TeacherResponse, session_id: str) -> TeachResponse:
     )
 
 
-def _parse_level(level: str) -> Difficulty:
-    try:
-        return Difficulty(level)
-    except ValueError:
-        return Difficulty.INTERMEDIATE
-
-
-def _doubt_from_content(content: str, mode: str = 'math', level: str = 'intermediate') -> UnifiedStudentContext:
-    return UnifiedStudentContext(
-        profile=StudentProfile(
-            user_id='anonymous',
-            level=_parse_level(level),
-            preferred_language=TeachingLanguage.HINGLISH,
-        ),
-        vision=VisionContext(
-            raw_text=content,
-            subject=Subject.MATH if mode == 'math' else Subject.GENERAL,
-            difficulty=_parse_level(level),
-        ),
-        session=SessionContext(
-            session_id=f'ses_{int(time.time())}',
-            session_started_at=time.time(),
-        ),
-    )
-
-
-def _lesson_from_topic(topic: str, level: str = 'intermediate') -> UnifiedStudentContext:
-    return UnifiedStudentContext(
-        profile=StudentProfile(
-            user_id='anonymous',
-            level=_parse_level(level),
-            preferred_language=TeachingLanguage.HINGLISH,
-        ),
-        vision=VisionContext(
-            raw_text=f'Teach me {topic}',
-            subject=Subject.GENERAL,
-            difficulty=_parse_level(level),
-            topics=[topic],
-        ),
-        session=SessionContext(
-            session_id=f'ses_{int(time.time())}',
-            session_started_at=time.time(),
-        ),
-    )
-
-
-async def _process_image_with_vision(
-    image_bytes: bytes,
-    mode: str,
-    level: str,
-) -> tuple[UnifiedStudentContext, Optional[dict], Optional[dict]]:
-    """Run Vision Pipeline + Scene Graph on image, return context + scene + decision."""
-    img = Image.open(BytesIO(image_bytes)).convert('RGB')
-    img_array = np.array(img)
-
-    pipeline = _get_vision_pipeline()
-    try:
-        scene = await pipeline.run(img_array)
-    except Exception as exc:
-        log.warning('vision_pipeline_failed', error=str(exc)[:200])
-        scene = None
-
-    if scene is not None:
-        adapter = VisionAdapter()
-        if not adapter.needs_recapture(scene):
-            vision_output = adapter.to_vision_output(scene)
-            vision_dict = adapter.to_vision_context(scene)
-
-            scene_graph = _get_scene_graph()
-            try:
-                teaching_decision = await scene_graph.process(scene)
-                decision_dict = teaching_decision.model_dump() if hasattr(teaching_decision, 'model_dump') else {}
-            except Exception:
-                decision_dict = None
-
-            context = UnifiedStudentContext(
-                profile=StudentProfile(
-                    user_id='anonymous',
-                    level=_parse_level(level),
-                    preferred_language=TeachingLanguage.HINGLISH,
-                ),
-                vision=VisionContext(
-                    raw_text=vision_output.get('raw_text', ''),
-                    subject=Subject.MATH if mode == 'math' else Subject.GENERAL,
-                    difficulty=_parse_level(level),
-                    topics=vision_output.get('topics', []),
-                    problem_type=vision_output.get('problem_type', 'general'),
-                    formulas=vision_output.get('formulas', []),
-                ),
-                session=SessionContext(
-                    session_id=f'ses_{int(time.time())}',
-                    session_started_at=time.time(),
-                ),
-            )
-            return context, vision_dict, decision_dict
-
-    raw_text = await _extract_text_from_image(img)
-    context = UnifiedStudentContext(
-        profile=StudentProfile(
-            user_id='anonymous',
-            level=_parse_level(level),
-            preferred_language=TeachingLanguage.HINGLISH,
-        ),
-        vision=VisionContext(
-            raw_text=raw_text,
-            subject=Subject.MATH if mode == 'math' else Subject.GENERAL,
-            difficulty=_parse_level(level),
-            topics=[], problem_type='general', formulas=[],
-        ),
-        session=SessionContext(
-            session_id=f'ses_{int(time.time())}',
-            session_started_at=time.time(),
-        ),
-    )
-    return context, None, None
-
-
-async def _extract_text_from_image(img: Image.Image) -> str:
-    """Extract text from image via LLM directly (no OpenCV dependency)."""
-    import base64
-    buf = BytesIO()
-    img.save(buf, format='JPEG', quality=85)
-    b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-    try:
-        gateway = await AIGateway.get_instance()
-        response = await gateway.execute(
-            messages=[{
-                'role': 'user',
-                'content': [
-                    {'type': 'text', 'text': 'Extract ALL text from this educational image. Return only the extracted text.'},
-                    {'type': 'image_url', 'image_url': {'url': f'data:image/jpeg;base64,{b64}'}},
-                ],
-            }],
-            provider=LLMProvider.GROQ,
-            max_tokens=4096,
-            temperature=0.1,
-        )
-        return response.text.strip() if response and response.text else ''
-    except Exception as exc:
-        log.warning('direct_image_extract_failed', error=str(exc)[:120])
-        return ''
-
-
 # ── Solve My Doubt (text) ────────────────────────────────────────────────────
 
 @router.post('/teach/doubt', response_model=TeachResponse)
 async def solve_doubt(request: DoubtRequest):
     """Solve My Doubt — teach the solution interactively."""
-    orchestrator = _get_orchestrator()
+    usecase = _get_solve_doubt()
     session_id = f'ses_{int(time.time())}'
 
     try:
-        context = _doubt_from_content(request.content, request.mode, request.level)
-        result: TeacherResponse = await orchestrator.execute(
-            context=context,
-            student_message=request.content,
+        result, report = await usecase.execute(
+            text=request.content,
+            mode=request.mode,
+            level=request.level,
         )
+
+        log.info('doubt_complete', report=report)
 
         await _get_event_bus().publish_sync(
             event_type=EventType.LESSON_STARTED,
@@ -327,31 +170,26 @@ async def solve_doubt_with_image(
     student_id: Optional[str] = Form(None),
 ):
     """Solve My Doubt from an image — runs Vision pipeline then teaches."""
-    orchestrator = _get_orchestrator()
+    usecase = _get_solve_doubt()
     session_id = f'ses_{int(time.time())}'
 
     try:
         image_bytes = await file.read()
-        context, vision_dict, decision_dict = await _process_image_with_vision(
-            image_bytes, mode, level,
+        result, report = await usecase.execute(
+            image_bytes=image_bytes,
+            mode=mode,
+            level=level,
         )
 
-        result: TeacherResponse = await orchestrator.execute(
-            context=context,
-            student_message=context.vision.raw_text,
-        )
+        log.info('doubt_image_complete', report=report)
 
         teach_resp = _response_to_teach(result, session_id)
-        if vision_dict:
-            teach_resp.concepts = vision_dict.get('topics', [])
-        if decision_dict:
-            teach_resp.teaching_decision = decision_dict
 
         await _get_event_bus().publish_sync(
             event_type=EventType.LESSON_STARTED,
             data={
                 'type': 'doubt_image',
-                'content_len': len(context.vision.raw_text),
+                'content_len': len(result.explanation),
                 'student_id': student_id,
                 'session_id': session_id,
             },
@@ -373,16 +211,15 @@ async def solve_doubt_with_image(
 @router.post('/teach/lesson', response_model=TeachResponse)
 async def teach_lesson(request: LessonRequest):
     """Teach Me — create an entire interactive classroom lesson."""
-    orchestrator = _get_orchestrator()
+    usecase = _get_teach_topic()
     session_id = f'ses_{int(time.time())}'
 
     try:
-        context = _lesson_from_topic(request.topic, request.level)
-        result: TeacherResponse = await orchestrator.execute(
-            context=context,
-            student_message=f'Teach me {request.topic}',
+        result, report = await usecase.execute(
+            topic=request.topic,
+            level=request.level,
         )
-
+        log.info('lesson_complete', topic=request.topic, report=report)
         return _response_to_teach(result, session_id)
 
     except Exception as exc:
@@ -394,33 +231,8 @@ async def teach_lesson(request: LessonRequest):
 
 @router.websocket('/teach/stream')
 async def teach_stream(websocket: WebSocket):
-    """WebSocket endpoint for real-time streaming teaching.
-
-    Client → Server:
-      { type: 'doubt', content: '...', mode: 'math', level: 'intermediate' }
-      { type: 'doubt_image', image_base64: '...', mode: 'math', level: 'intermediate' }
-      { type: 'lesson', topic: '...', level: 'intermediate' }
-      { type: 'student_response', text: '...' }
-      { type: 'cancel' }
-
-    Server → Client (streamed):
-      { type: 'processing', phase: 'analyzing_image' }
-      { type: 'processing', phase: 'building_scene' }
-      { type: 'processing', phase: 'planning_lesson' }
-      { type: 'speech', text: '...', emotion: {...} }
-      { type: 'board', text: '...', action: 'write', color: ... }
-      { type: 'pointer', action: 'point', x: ..., y: ... }
-      { type: 'thinking', duration_ms: 800 }
-      { type: 'question', text: '...' }
-      { type: 'homework', problems: [...] }
-      { type: 'quiz', questions: {...} }
-      { type: 'concepts', topics: [...] }
-      { type: 'memory', topics_covered: [...], ... }
-      { type: 'done', session_id: '...' }
-      { type: 'error', message: '...' }
-    """
+    """WebSocket endpoint for real-time streaming teaching."""
     await websocket.accept()
-    orchestrator = _get_orchestrator()
     session_id = f'stream_{int(time.time())}'
 
     try:
@@ -430,41 +242,47 @@ async def teach_stream(websocket: WebSocket):
             msg_type = msg.get('type', '')
 
             if msg_type == 'doubt':
-                context = _doubt_from_content(
+                await _stream_doubt(
+                    websocket,
                     msg.get('content', ''),
                     msg.get('mode', 'math'),
                     msg.get('level', 'intermediate'),
+                    session_id,
                 )
-                await _run_and_stream(orchestrator, websocket, context, session_id)
 
             elif msg_type == 'doubt_image':
-                image_b64 = msg.get('image_base64', '')
-                mode = msg.get('mode', 'math')
-                level = msg.get('level', 'intermediate')
                 await _send_json(websocket, {'type': 'processing', 'phase': 'analyzing_image'})
                 try:
+                    image_b64 = msg.get('image_base64', '')
                     image_bytes = _decode_base64_image(image_b64)
-                    context, vision_dict, _ = await _process_image_with_vision(
-                        image_bytes, mode, level,
+                    await _stream_doubt_image(
+                        websocket, image_bytes,
+                        msg.get('mode', 'math'),
+                        msg.get('level', 'intermediate'),
+                        session_id,
                     )
-                    await _send_json(websocket, {'type': 'processing', 'phase': 'planning_lesson'})
-                    await _run_and_stream(orchestrator, websocket, context, session_id, vision_dict=vision_dict)
                 except HTTPException as exc:
                     await _send_json(websocket, {'type': 'error', 'message': exc.detail, 'code': exc.status_code})
                 except Exception as exc:
                     await _send_json(websocket, {'type': 'error', 'message': str(exc)[:200]})
 
             elif msg_type == 'lesson':
-                context = _lesson_from_topic(
+                await _stream_lesson(
+                    websocket,
                     msg.get('topic', ''),
                     msg.get('level', 'intermediate'),
+                    session_id,
                 )
-                await _run_and_stream(orchestrator, websocket, context, session_id)
 
             elif msg_type == 'student_response':
                 await _send_json(websocket, {'type': 'thinking', 'duration_ms': 600})
-                context = _doubt_from_content(msg.get('text', ''))
-                await _run_and_stream(orchestrator, websocket, context, session_id)
+                await _stream_doubt(
+                    websocket,
+                    msg.get('text', ''),
+                    msg.get('mode', 'math'),
+                    msg.get('level', 'intermediate'),
+                    session_id,
+                )
 
             elif msg_type == 'cancel':
                 await _send_json(websocket, {'type': 'cancelled'})
@@ -480,29 +298,77 @@ async def teach_stream(websocket: WebSocket):
             pass
 
 
-async def _run_and_stream(
-    orchestrator: TeacherOrchestrator,
+async def _stream_doubt(
     ws: WebSocket,
-    context: UnifiedStudentContext,
+    content: str,
+    mode: str,
+    level: str,
     session_id: str,
-    vision_dict: Optional[dict] = None,
 ) -> None:
-    """Run orchestrator and stream each output element."""
-    await _send_json(ws, {'type': 'thinking', 'duration_ms': 400})
-    await asyncio.sleep(0.2)
-
-    async def _on_progress(phase: str, detail: str) -> None:
-        """Send progress update to the frontend WebSocket."""
+    """Handle 'doubt' WS message — text only."""
+    usecase = _get_solve_doubt()
+    async def _cb(phase: str, detail: str) -> None:
         try:
             await _send_json(ws, {'type': 'processing', 'phase': phase, 'detail': detail})
         except Exception:
             pass
-
-    result: TeacherResponse = await orchestrator.execute(
-        context=context,
-        student_message=context.vision.raw_text,
-        progress_cb=_on_progress,
+    result, report = await usecase.execute(
+        text=content, mode=mode, level=level, progress_cb=_cb,
     )
+    log.info('ws_doubt_complete', session_id=session_id, report=report)
+    await _stream_response(ws, result, session_id)
+
+
+async def _stream_doubt_image(
+    ws: WebSocket,
+    image_bytes: bytes,
+    mode: str,
+    level: str,
+    session_id: str,
+) -> None:
+    """Handle 'doubt_image' WS message."""
+    usecase = _get_solve_doubt()
+    async def _cb(phase: str, detail: str) -> None:
+        try:
+            await _send_json(ws, {'type': 'processing', 'phase': phase, 'detail': detail})
+        except Exception:
+            pass
+    result, report = await usecase.execute(
+        image_bytes=image_bytes, mode=mode, level=level, progress_cb=_cb,
+    )
+    vision_dict = getattr(usecase, 'last_vision_dict', None)
+    log.info('ws_doubt_image_complete', session_id=session_id, report=report)
+    await _stream_response(ws, result, session_id, vision_dict=vision_dict)
+
+
+async def _stream_lesson(
+    ws: WebSocket,
+    topic: str,
+    level: str,
+    session_id: str,
+) -> None:
+    """Handle 'lesson' WS message."""
+    usecase = _get_teach_topic()
+    async def _cb(phase: str, detail: str) -> None:
+        try:
+            await _send_json(ws, {'type': 'processing', 'phase': phase, 'detail': detail})
+        except Exception:
+            pass
+    result, report = await usecase.execute(
+        topic=topic, level=level, progress_cb=_cb,
+    )
+    log.info('ws_lesson_complete', session_id=session_id, report=report)
+    await _stream_response(ws, result, session_id)
+
+
+async def _stream_response(
+    ws: WebSocket,
+    result: TeacherResponse,
+    session_id: str,
+    vision_dict: Optional[dict] = None,
+) -> None:
+    """Stream a TeacherResponse over the WebSocket."""
+    await _send_json(ws, {'type': 'thinking', 'duration_ms': 400})
 
     if result.explanation:
         await _send_json(ws, {
