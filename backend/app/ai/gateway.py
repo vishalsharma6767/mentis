@@ -211,15 +211,12 @@ class GroqProvider(BaseProvider):
         client = self._get_client()
         start = time.monotonic()
 
-        kwargs = dict(
+        response = await client.chat.completions.create(
             model=self.config.model,
             messages=messages,
             max_tokens=max_tokens or self.config.max_tokens,
             temperature=temperature if temperature is not None else self.config.temperature,
         )
-        if expect_json:
-            kwargs['response_format'] = {'type': 'json_object'}
-        response = await client.chat.completions.create(**kwargs)
 
         latency = (time.monotonic() - start) * 1000
         content = response.choices[0].message.content or ''
@@ -361,15 +358,12 @@ class OpenAIProvider(BaseProvider):
         client = self._get_client()
         start = time.monotonic()
 
-        kwargs = dict(
+        response = await client.chat.completions.create(
             model=self.config.model,
             messages=messages,
             max_tokens=max_tokens or self.config.max_tokens,
             temperature=temperature if temperature is not None else self.config.temperature,
         )
-        if expect_json:
-            kwargs['response_format'] = {'type': 'json_object'}
-        response = await client.chat.completions.create(**kwargs)
 
         latency = (time.monotonic() - start) * 1000
         content = response.choices[0].message.content or ''

@@ -134,7 +134,7 @@ class TeacherAgent:
                     messages=messages,
                     provider=provider,
                     expect_json=True,
-                    max_tokens=4096,
+                    max_tokens=8192,
                     temperature=0.7,
                     use_cache=True,
                 )
