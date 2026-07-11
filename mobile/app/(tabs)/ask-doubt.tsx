@@ -228,6 +228,9 @@ export default function AskDoubtScreen() {
         setAwaitingDoubts(false);
         await finishSession();
         return;
+      } else if (action.done) {
+        setSessionId(action.session_id);
+        setSessionPhase('homework');
       }
     }
     processingRef.current = false;
@@ -298,8 +301,7 @@ export default function AskDoubtScreen() {
           break;
 
         case 'done':
-          setSessionId(data.session_id || sessionId);
-          setSessionPhase('homework');
+          processActions([{ done: true, session_id: data.session_id || sessionId }]);
           break;
 
         case 'session_complete':

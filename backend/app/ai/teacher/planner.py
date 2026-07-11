@@ -16,6 +16,7 @@ Every lesson plan includes:
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Optional
 
 from app.ai.gateway import AIGateway, LLMProvider
@@ -105,7 +106,10 @@ class PlannerAgent:
                     use_cache=True,
                 )
 
-                parsed = json.loads(response.text)
+                parsed = self._try_parse_json(response.text)
+                if parsed is None:
+                    raise ValueError('No valid JSON found in response')
+
                 result = self._parse_result(parsed, vision_output)
 
                 log.info(
@@ -219,6 +223,39 @@ class PlannerAgent:
             teaching_strategy=str(result.get('teaching_strategy', 'step_by_step')),
             adaptations=[str(a) for a in (result.get('adaptations', []) or [])],
         )
+
+    # ── JSON parsing ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _try_parse_json(text: str) -> Optional[dict[str, Any]]:
+        """Extract the first JSON object from a string."""
+        text = text.strip()
+        if text.startswith('{') and text.endswith('}'):
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                pass
+        match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+        depth = 0
+        start = -1
+        for i, ch in enumerate(text):
+            if ch == '{':
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    try:
+                        return json.loads(text[start:i + 1])
+                    except json.JSONDecodeError:
+                        pass
+        return None
 
     def _fallback_plan(self, vision: VisionOutput, student: StudentContext) -> PlannerOutput:
         """Generate a contextual fallback plan using vision.raw_text directly."""
