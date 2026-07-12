@@ -226,7 +226,7 @@ class SolveDoubtUseCase(BaseUseCase):
         monitor: PipelineMonitor,
     ) -> TeacherResponse:
         """Run the teacher pipeline: planner → teacher → critic → coach → composer."""
-        provider = provider or LLMProvider.GROQ
+        # None = let gateway auto-select best provider (Gemini → Groq)
 
         # Gateway check
         await self._log_providers(monitor)
