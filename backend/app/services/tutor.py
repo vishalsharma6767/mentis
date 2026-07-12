@@ -1,214 +1,161 @@
-import json
-from app.services.groq_client import GroqClient
+"""Legacy tutor endpoints backed by the shared Gemini -> Groq gateway."""
+
+from __future__ import annotations
+
+from typing import Any, Optional
+
+from app.ai.gateway import AIGateway
+from app.core.exceptions import AIProviderError
+from app.utils.json_utils import extract_json
 
 
-SYSTEM_PROMPT = """You are Mentis, an AI tutor. You teach step by step without giving answers immediately.
-- Adapt explanations to the student's level (beginner, intermediate, advanced)
-- Break problems into small logical steps
-- Ask guiding questions before revealing answers
-- Praise progress and give encouraging feedback
-- Use Socratic method: ask questions that lead the student to discover the answer
-- Add AR overlay instructions that can be drawn over a notebook or textbook
-- Include a quick check question after the lesson
-- Return response as valid JSON with structure:
-{
-  "steps": [
-    {
-      "number": 1,
-      "instruction": "what to do",
-      "explanation": "why this step",
-      "hint": "a hint without giving away the answer",
-      "answer": "the result of this step",
-      "ar_annotation": "short phrase to overlay on the page",
-      "focus": "what region or symbol to highlight"
-    }
-  ],
-  "final_answer": "the complete solution",
-  "key_concept": "the main concept being taught",
-  "confidence_check": "one question to ask the student",
-  "recommended_practice": ["short practice recommendation"]
-}"""
-
-
-PER_STEP_PROMPT = """You are Mentis, an AI tutor. The student is working through a problem step by step.
-
-Previous steps completed:
-{completed_steps}
-
-Current step to teach:
-{current_step}
-
-The student needs help with this step. Provide:
-1. A brief explanation of what to do
-2. A small hint if they're stuck
-3. The answer only after they confirm they understand
-
-Respond briefly and conversationally."""
-
-
-DOUBT_PROMPT = """You are Mentis in a live tutoring session.
-The student asked a doubt while solving this material.
-
-Learning mode: {mode}
-Student level: {level}
-Problem:
-{content}
-
-Current step:
-{current_step}
-
-Student doubt:
-{question}
-
-Answer like a real teacher:
-- brief and conversational
-- do not dump the final answer unless necessary
-- give one AR pen annotation phrase to write on the page
-- ask one follow-up question
-
-Return only valid JSON:
-{{
-  "reply": "teacher response",
-  "pen_annotation": "short text to write with AR pen",
-  "follow_up": "question for student"
-}}"""
+SYSTEM_PROMPT = """You are Mentis, an experienced Indian teacher.
+Teach in warm, natural Hinglish and adapt to the student's level.
+Guide students through small logical steps before revealing any answer.
+Never say that you are an AI. Return only the requested JSON."""
 
 
 class TutorService:
-    def __init__(self, groq: GroqClient):
-        self.groq = groq
+    """Compatibility service for the older /api/tutor routes.
 
-    def generate_lesson(self, problem: dict, level: str = 'intermediate', mode: str = 'math') -> dict:
-        prompt = (
-            f"Learning mode: {mode}\n"
-            f"Problem type: {problem.get('type', 'unknown')}\n"
-            f"Problem content: {problem.get('content', '')}\n"
-            f"Student level: {level}\n\n"
-            f"Generate a complete step-by-step lesson. "
-            f"Provide {self._step_count(level)} steps."
+    These routes use the same provider chain as the V1 streaming experience,
+    so they no longer return hardcoded lessons when a model is available.
+    """
+
+    def __init__(self, gateway: Optional[AIGateway] = None) -> None:
+        self._gateway = gateway
+
+    async def generate_lesson(
+        self,
+        problem: dict[str, Any],
+        level: str = 'intermediate',
+        mode: str = 'math',
+    ) -> dict[str, Any]:
+        prompt = f"""Create a complete, personalised lesson for this student.
+
+Learning mode: {mode}
+Student level: {level}
+Problem type: {problem.get('type', 'general')}
+Problem: {problem.get('content', '')}
+
+Return JSON exactly in this shape:
+{{
+  "steps": [
+    {{"number": 1, "instruction": "...", "explanation": "...", "hint": "...", "answer": "...", "ar_annotation": "...", "focus": "..."}}
+  ],
+  "final_answer": "...",
+  "key_concept": "...",
+  "confidence_check": "...",
+  "recommended_practice": ["..."]
+}}
+Use 3 to 6 useful steps. Every field must be grounded in the student's problem."""
+        return await self._request_json(prompt, max_tokens=2048, temperature=0.3)
+
+    async def get_step_help(
+        self,
+        problem: dict[str, Any],
+        completed: list[Any],
+        current: dict[str, Any],
+    ) -> str:
+        completed_text = '\n'.join(
+            f"Step {item.get('number', '?')}: {item.get('instruction', '')}"
+            for item in completed
+            if isinstance(item, dict)
         )
-        system = SYSTEM_PROMPT + f"\nStudent level: {level}\nLearning mode: {mode}"
+        prompt = f"""The student needs help with one step.
+
+Problem: {problem.get('content', '')}
+Completed work:
+{completed_text or 'No completed steps yet.'}
+Current step: {current.get('instruction', '')}
+
+Give a concise Hinglish explanation and one hint. Do not invent a generic
+example; refer to the actual problem."""
+        gateway = await self._resolve_gateway()
         try:
-            result = self.groq.reason(prompt, system=system)
-        except Exception:
-            return self._fallback_lesson(problem, level, mode)
+            response = await gateway.execute(
+                messages=[
+                    {'role': 'system', 'content': SYSTEM_PROMPT},
+                    {'role': 'user', 'content': prompt},
+                ],
+                expect_json=False,
+                max_tokens=700,
+                temperature=0.4,
+                use_cache=False,
+            )
+        except AIProviderError:
+            raise
+        except Exception as exc:
+            raise AIProviderError(
+                provider='all',
+                message='The AI teacher could not generate step help',
+            ) from exc
 
-        try:
-            cleaned = result.strip()
-            if cleaned.startswith('```json'):
-                cleaned = cleaned.split('```json')[1].split('```')[0].strip()
-            elif cleaned.startswith('```'):
-                cleaned = cleaned.split('```')[1].split('```')[0].strip()
-            return json.loads(cleaned)
-        except (json.JSONDecodeError, IndexError):
-            return {
-                'steps': [{
-                    'number': 1,
-                    'instruction': result,
-                    'explanation': '',
-                    'hint': '',
-                    'answer': '',
-                    'ar_annotation': 'Focus here',
-                    'focus': 'problem area',
-                }],
-                'final_answer': '',
-                'key_concept': '',
-                'confidence_check': 'Can you explain the next step in your own words?',
-                'recommended_practice': ['Try one similar question without looking at the answer.'],
-            }
+        if not response.text.strip():
+            raise AIProviderError(provider='all', message='The AI teacher returned an empty step-help response')
+        return response.text.strip()
 
-    def get_step_help(self, problem: dict, completed: list, current: dict) -> str:
-        prompt = PER_STEP_PROMPT.format(
-            completed_steps='\n'.join(f"Step {s['number']}: {s['instruction']}" for s in completed),
-            current_step=f"Step {current['number']}: {current['instruction']}",
-        )
-        return self.groq.reason(prompt)
-
-    def answer_doubt(
+    async def answer_doubt(
         self,
         content: str,
         question: str,
-        current_step: dict | None = None,
+        current_step: Optional[dict[str, Any]] = None,
         level: str = 'intermediate',
         mode: str = 'math',
-    ) -> dict:
-        step_text = 'No step selected'
-        if current_step:
-            step_text = f"Step {current_step.get('number', '')}: {current_step.get('instruction', '')}"
-        prompt = DOUBT_PROMPT.format(
-            mode=mode,
-            level=level,
-            content=content,
-            current_step=step_text,
-            question=question,
-        )
+    ) -> dict[str, Any]:
+        current = current_step or {}
+        prompt = f"""Answer this student doubt like a patient Indian teacher.
+
+Learning mode: {mode}
+Student level: {level}
+Problem: {content}
+Current step: {current.get('instruction', 'No step selected')}
+Student doubt: {question}
+
+Return JSON exactly in this shape:
+{{
+  "reply": "specific Hinglish explanation",
+  "pen_annotation": "short text to write on the board",
+  "follow_up": "one useful question for the student"
+}}
+All three values must address the actual doubt."""
+        return await self._request_json(prompt, max_tokens=900, temperature=0.35)
+
+    async def _request_json(
+        self,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> dict[str, Any]:
+        gateway = await self._resolve_gateway()
         try:
-            result = self.groq.reason(prompt)
-            cleaned = result.strip()
-            if cleaned.startswith('```json'):
-                cleaned = cleaned.split('```json')[1].split('```')[0].strip()
-            elif cleaned.startswith('```'):
-                cleaned = cleaned.split('```')[1].split('```')[0].strip()
-            return json.loads(cleaned)
-        except Exception:
-            return {
-                'reply': 'Good doubt. Look at the current step and ask what operation keeps both sides or both ideas balanced.',
-                'pen_annotation': 'Why this step?',
-                'follow_up': 'Can you tell me what changed from the previous line?',
-            }
-
-    def _step_count(self, level: str) -> int:
-        return {'beginner': 5, 'intermediate': 4, 'advanced': 3}.get(level, 4)
-
-    def _fallback_lesson(self, problem: dict, level: str, mode: str) -> dict:
-        content = problem.get('content') or 'the scanned problem'
-        labels = {
-            'math': ('Identify the unknown', 'Look for the variable and what the question asks.'),
-            'coding': ('Read the error or goal', 'Find the line, function, or output the code is about.'),
-            'science': ('Name the concept', 'Identify the formula, component, or process being tested.'),
-            'book': ('Find the main idea', 'Underline the sentence that carries the paragraph.'),
-            'language': ('Understand the sentence', 'Spot the subject, verb, and unfamiliar words.'),
-            'diagram': ('Label the parts', 'Start with the most obvious label or relationship.'),
-            'homework': ('Sort the questions', 'Begin with the easiest question to build momentum.'),
-        }
-        first_instruction, first_hint = labels.get(mode, labels['math'])
-        return {
-            'steps': [
-                {
-                    'number': 1,
-                    'instruction': first_instruction,
-                    'explanation': f'Before solving, Mentis anchors the lesson to what is visible: {content[:140]}.',
-                    'hint': first_hint,
-                    'answer': 'The target is the main question or unclear concept.',
-                    'ar_annotation': 'Circle the target',
-                    'focus': 'main problem area',
-                },
-                {
-                    'number': 2,
-                    'instruction': 'Break it into one small move',
-                    'explanation': 'A good tutor does not jump to the final answer. We choose the smallest valid next step.',
-                    'hint': 'Ask: what can I simplify, label, translate, or test first?',
-                    'answer': 'Write the next operation, label, translation, or test beside the original work.',
-                    'ar_annotation': 'Next small step',
-                    'focus': 'first working line',
-                },
-                {
-                    'number': 3,
-                    'instruction': 'Check your reasoning',
-                    'explanation': 'Compare the new line with the original problem so mistakes are caught early.',
-                    'hint': 'Does the meaning stay the same after your step?',
-                    'answer': 'If it matches, continue. If not, revise the previous step.',
-                    'ar_annotation': 'Check before moving on',
-                    'focus': 'student answer',
-                },
-            ],
-            'final_answer': 'Continue step by step with the same reasoning pattern.',
-            'key_concept': f'{mode.title()} guided problem solving',
-            'confidence_check': 'What was the reason for the first step?',
-                'recommended_practice': [
-                    'Solve one similar example slowly.',
-                    'Say each step out loud before writing it.',
+            response = await gateway.execute(
+                messages=[
+                    {'role': 'system', 'content': SYSTEM_PROMPT},
+                    {'role': 'user', 'content': prompt},
                 ],
-            }
+                expect_json=True,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                use_cache=False,
+            )
+        except AIProviderError:
+            raise
+        except Exception as exc:
+            raise AIProviderError(
+                provider='all',
+                message='The AI teacher could not generate a response',
+            ) from exc
 
-tutor_service = TutorService(GroqClient())
+        parsed = extract_json(response.text)
+        if not isinstance(parsed, dict):
+            raise AIProviderError(provider='all', message='The AI teacher returned an invalid structured response')
+        return parsed
+
+    async def _resolve_gateway(self) -> AIGateway:
+        if self._gateway is None:
+            self._gateway = await AIGateway.get_instance()
+        return self._gateway
+
+
+tutor_service = TutorService()

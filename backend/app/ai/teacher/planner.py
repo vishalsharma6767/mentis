@@ -129,7 +129,10 @@ class PlannerAgent:
                     continue
 
         log.error('planner_all_attempts_failed')
-        return self._fallback_plan(vision_output, student)
+        raise AgentExecutionError(
+            agent_name='planner',
+            message='No AI provider could generate a lesson plan',
+        )
 
     def _build_input_prompt(self, vision: VisionOutput, student: StudentContext) -> str:
         """Format vision output and student context into the planner prompt."""

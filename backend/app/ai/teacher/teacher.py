@@ -164,7 +164,10 @@ class TeacherAgent:
                     continue
 
         log.error('teacher_all_attempts_failed', step=step_index)
-        return self._fallback_output(step, step_index, vision, student, language)
+        raise AgentExecutionError(
+            agent_name='teacher',
+            message='No AI provider could generate a teaching response',
+        )
 
     # ── Prompt building ─────────────────────────────────────────────────
 

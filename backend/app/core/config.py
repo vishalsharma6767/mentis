@@ -137,6 +137,18 @@ class Settings(BaseSettings):
 
     # ── Validators ─────────────────────────────────────────────────────
 
+    @field_validator('debug', mode='before')
+    @classmethod
+    def normalize_debug_value(cls, v: object) -> object:
+        """Accept common deployment labels such as DEBUG=release."""
+        if isinstance(v, str):
+            normalized = v.strip().lower()
+            if normalized in {'release', 'production', 'prod', 'false', '0', 'no', 'off'}:
+                return False
+            if normalized in {'development', 'dev', 'true', '1', 'yes', 'on'}:
+                return True
+        return v
+
     @field_validator('jwt_secret_key')
     @classmethod
     def warn_if_default_jwt_secret(cls, v: str) -> str:

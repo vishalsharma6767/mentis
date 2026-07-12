@@ -42,6 +42,7 @@ from app.ai.teacher.schemas import (
 from app.ai.teacher.state_machine import TeacherState
 from app.core.constants import Difficulty, Subject, TeachingLanguage
 from app.core.events import EventBus, EventType
+from app.core.exceptions import AIProviderError
 from app.core.logger import get_logger
 from app.use_cases.base import BaseUseCase, PipelineMonitor, ProgressCb
 
@@ -251,7 +252,10 @@ class SolveDoubtUseCase(BaseUseCase):
             plan = await self._run_planner(vision, context, provider, monitor)
         except Exception as exc:
             log.error('pipeline_failed_planner', error=str(exc)[:300])
-            return self._error_response('I had trouble planning this lesson. Please try again.', monitor)
+            raise AIProviderError(
+                provider='all',
+                message='The AI teacher could not create a lesson plan',
+            ) from exc
 
         # Teacher
         await self._progress(progress_cb, 'teaching', 'Teaching the concept')
@@ -262,10 +266,10 @@ class SolveDoubtUseCase(BaseUseCase):
             )
         except Exception as exc:
             log.error('pipeline_failed_teacher', error=str(exc)[:300])
-            return self._error_response(
-                f'I ran into an issue while teaching. {_fallback_explanation(vision)}',
-                monitor,
-            )
+            raise AIProviderError(
+                provider='all',
+                message='The AI teacher could not generate a teaching response',
+            ) from exc
 
         # Critic + revision
         try:
@@ -317,7 +321,7 @@ class SolveDoubtUseCase(BaseUseCase):
         self,
         vision: VisionOutput,
         context: UnifiedStudentContext,
-        provider: LLMProvider,
+        provider: Optional[LLMProvider],
         monitor: PipelineMonitor,
     ) -> PlannerOutput:
         student_ctx = self._build_student_context(context)
@@ -343,7 +347,7 @@ class SolveDoubtUseCase(BaseUseCase):
         student_message: str,
         language: TeachingLanguage,
         emotion: str,
-        provider: LLMProvider,
+        provider: Optional[LLMProvider],
         monitor: PipelineMonitor,
         revision_hint: str = '',
     ) -> TeacherOutput:
@@ -377,7 +381,7 @@ class SolveDoubtUseCase(BaseUseCase):
         student_message: str,
         language: TeachingLanguage,
         emotion: str,
-        provider: LLMProvider,
+        provider: Optional[LLMProvider],
         monitor: PipelineMonitor,
     ) -> TeacherOutput:
         try:
@@ -406,7 +410,7 @@ class SolveDoubtUseCase(BaseUseCase):
     async def _run_coach(
         self,
         context: UnifiedStudentContext,
-        provider: LLMProvider,
+        provider: Optional[LLMProvider],
         monitor: PipelineMonitor,
     ) -> CoachingDecision:
         try:
@@ -480,10 +484,11 @@ class SolveDoubtUseCase(BaseUseCase):
     @staticmethod
     def _error_response(message: str, monitor: PipelineMonitor) -> TeacherResponse:
         log.error('pipeline_failed_returning_error', message=message)
+        hinglish_msg = message or 'Kripya apna doubt dobara poochh lijiye. Main aapki madad karunga.'
         return TeacherResponse(
-            explanation=message,
-            key_points=['Please try asking your doubt again'],
-            checkpoints=['Did you understand the question?'],
+            explanation=hinglish_msg,
+            key_points=['Kripya apna doubt dobara poochh lijiye'],
+            checkpoints=['Kya aapko samajh aa raha hai?'],
             speech=None,
             board_actions=[],
             ar_instructions=[],

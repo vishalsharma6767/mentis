@@ -302,7 +302,7 @@ Return JSON:
                     },
                     {'role': 'user', 'content': prompt},
                 ],
-                provider=provider or LLMProvider.GROQ,
+                provider=provider,
                 expect_json=True,
                 max_tokens=1024,
                 temperature=0.3,

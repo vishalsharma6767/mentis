@@ -15,6 +15,7 @@ module.exports = {
     }],
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx'],
+  testPathIgnorePatterns: ['<rootDir>/__tests__/__mocks__/'],
   testEnvironment: 'node',
   moduleNameMapper: {
     'expo-constants': '<rootDir>/__tests__/__mocks__/expo-constants.js',

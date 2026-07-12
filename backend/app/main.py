@@ -92,11 +92,13 @@ app.include_router(health_v1.router)
 async def health() -> dict:
     providers = []
     groq_configured = False
+    gemini_configured = False
     try:
         from app.ai.gateway import AIGateway
         gw = await AIGateway.get_instance()
         providers = [p.value for p in gw.available_providers]
         groq_configured = 'groq' in providers
+        gemini_configured = 'gemini' in providers
     except Exception:
         pass
 
@@ -105,6 +107,8 @@ async def health() -> dict:
         'version': settings.app_version,
         'environment': settings.environment.value,
         'providers': providers,
+        'gemini_configured': gemini_configured,
+        'gemini_key_set': bool(settings.gemini_api_key),
         'groq_configured': groq_configured,
         'groq_key_set': bool(settings.groq_api_key),
     }

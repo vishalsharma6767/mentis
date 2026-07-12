@@ -16,5 +16,11 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
+      - key: GROQ_REASONING_MODEL
+        value: llama-3.3-70b-versatile
       - key: DATABASE_URL
         value: sqlite:///./mentis.db

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from app.ai.teacher.schemas import TeacherResponse
 from app.ai.teacher.personality import TeacherPersonality
 from app.core.events import EventBus, EventType
+from app.core.exceptions import AIProviderError
 from app.core.logger import get_logger
 from app.use_cases.solve_doubt import SolveDoubtUseCase
 from app.use_cases.teach_topic import TeachTopicUseCase
@@ -106,6 +107,12 @@ def _get_event_bus() -> EventBus:
 
 
 def _response_to_teach(resp: TeacherResponse, session_id: str) -> TeachResponse:
+    lesson_plan = resp.lesson_plan.model_dump() if resp.lesson_plan and hasattr(resp.lesson_plan, 'model_dump') else None
+    homework = lesson_plan.get('homework', []) if isinstance(lesson_plan, dict) else []
+    concepts = lesson_plan.get('key_concepts', []) if isinstance(lesson_plan, dict) else []
+    if not concepts and resp.memory_update:
+        concepts = list(resp.memory_update.topics_covered)
+
     return TeachResponse(
         session_id=session_id,
         explanation=resp.explanation,
@@ -118,7 +125,9 @@ def _response_to_teach(resp: TeacherResponse, session_id: str) -> TeachResponse:
         checkpoints=resp.checkpoints,
         examples=resp.examples,
         analogy=resp.analogy,
-        lesson_plan=resp.lesson_plan.model_dump() if resp.lesson_plan and hasattr(resp.lesson_plan, 'model_dump') else None,
+        homework=homework,
+        lesson_plan=lesson_plan,
+        concepts=concepts,
         ask_doubts=resp.ask_doubts,
         session_complete=resp.session_complete,
     )
@@ -155,6 +164,9 @@ async def solve_doubt(request: DoubtRequest):
 
         return _response_to_teach(result, session_id)
 
+    except AIProviderError as exc:
+        log.warning('doubt_ai_unavailable', error=str(exc)[:300])
+        raise HTTPException(status_code=503, detail='AI teacher is temporarily unavailable. Please try again shortly.')
     except Exception as exc:
         log.error('doubt_failed', error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
@@ -201,6 +213,9 @@ async def solve_doubt_with_image(
 
     except HTTPException:
         raise
+    except AIProviderError as exc:
+        log.warning('doubt_image_ai_unavailable', error=str(exc)[:300])
+        raise HTTPException(status_code=503, detail='AI teacher is temporarily unavailable. Please try again shortly.')
     except Exception as exc:
         log.error('doubt_image_failed', error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
@@ -222,6 +237,9 @@ async def teach_lesson(request: LessonRequest):
         log.info('lesson_complete', topic=request.topic, report=report)
         return _response_to_teach(result, session_id)
 
+    except AIProviderError as exc:
+        log.warning('lesson_ai_unavailable', topic=request.topic, error=str(exc)[:300])
+        raise HTTPException(status_code=503, detail='AI teacher is temporarily unavailable. Please try again shortly.')
     except Exception as exc:
         log.error('lesson_failed', topic=request.topic, error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
@@ -263,6 +281,9 @@ async def teach_stream(websocket: WebSocket):
                     )
                 except HTTPException as exc:
                     await _send_json(websocket, {'type': 'error', 'message': exc.detail, 'code': exc.status_code})
+                except AIProviderError as exc:
+                    log.warning('ws_image_ai_unavailable', session_id=session_id, error=str(exc)[:300])
+                    await _send_json(websocket, {'type': 'error', 'message': 'AI teacher is temporarily unavailable. Please try again shortly.', 'code': 503})
                 except Exception as exc:
                     await _send_json(websocket, {'type': 'error', 'message': str(exc)[:200]})
 
@@ -290,6 +311,13 @@ async def teach_stream(websocket: WebSocket):
 
     except WebSocketDisconnect:
         log.info('ws_disconnected', session_id=session_id)
+    except AIProviderError as exc:
+        log.warning('ws_ai_unavailable', session_id=session_id, error=str(exc)[:300])
+        try:
+            await _send_json(websocket, {'type': 'error', 'message': 'AI teacher is temporarily unavailable. Please try again shortly.', 'code': 503})
+            await _send_json(websocket, {'type': 'done', 'session_id': session_id, 'recommendations': []})
+        except Exception:
+            log.debug('ws_ai_error_send_failed')
     except Exception as exc:
         log.error('ws_error', session_id=session_id, error=str(exc))
         try:

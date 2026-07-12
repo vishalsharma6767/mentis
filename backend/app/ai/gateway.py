@@ -24,6 +24,7 @@ Usage::
 """
 
 import asyncio
+import base64
 import hashlib
 import json
 import os
@@ -284,23 +285,26 @@ class GeminiProvider(BaseProvider):
         system_text = ''
         for msg in messages:
             if msg['role'] == 'system':
-                system_text += msg['content'] + '\n'
+                system_text += str(msg.get('content', '')) + '\n'
             elif msg['role'] == 'user':
                 contents.append(gemini_types.Content(
                     role='user',
-                    parts=[gemini_types.Part(text=msg['content'])],
+                    parts=self._to_gemini_parts(msg.get('content', ''), gemini_types),
                 ))
             elif msg['role'] == 'assistant':
                 contents.append(gemini_types.Content(
                     role='model',
-                    parts=[gemini_types.Part(text=msg['content'])],
+                    parts=self._to_gemini_parts(msg.get('content', ''), gemini_types),
                 ))
 
-        gemini_config = gemini_types.GenerateContentConfig(
-            system_instruction=system_text.strip() if system_text else None,
-            max_output_tokens=max_tokens or self.config.max_tokens,
-            temperature=temperature if temperature is not None else self.config.temperature,
-        )
+        config_kwargs: dict[str, Any] = {
+            'system_instruction': system_text.strip() if system_text else None,
+            'max_output_tokens': max_tokens or self.config.max_tokens,
+            'temperature': temperature if temperature is not None else self.config.temperature,
+        }
+        if expect_json:
+            config_kwargs['response_mime_type'] = 'application/json'
+        gemini_config = gemini_types.GenerateContentConfig(**config_kwargs)
         # genai.Client is synchronous — offload to thread to avoid blocking event loop
         response = await asyncio.to_thread(
             client.models.generate_content,
@@ -310,7 +314,15 @@ class GeminiProvider(BaseProvider):
         )
 
         latency = (time.monotonic() - start) * 1000
-        content = response.text or ''
+        try:
+            content = response.text or ''
+        except Exception:
+            content = ''
+        if not content:
+            raise AIProviderError(
+                provider='gemini',
+                message='Gemini returned no usable text response',
+            )
 
         input_tokens = self._estimate_tokens(str(messages))
         output_tokens = self._estimate_tokens(content)
@@ -327,6 +339,47 @@ class GeminiProvider(BaseProvider):
             output_tokens=output_tokens,
             cost_usd=round(cost, 8),
         )
+
+    @staticmethod
+    def _to_gemini_parts(content: Any, gemini_types: Any) -> list[Any]:
+        """Convert OpenAI-style text/image content into Gemini content parts."""
+        if isinstance(content, str):
+            return [gemini_types.Part(text=content)]
+
+        if not isinstance(content, list):
+            return [gemini_types.Part(text=str(content))]
+
+        parts: list[Any] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('type') == 'text':
+                parts.append(gemini_types.Part(text=str(item.get('text', ''))))
+                continue
+
+            if item.get('type') != 'image_url':
+                continue
+
+            image_url = item.get('image_url', {})
+            url = image_url.get('url') if isinstance(image_url, dict) else None
+            if not isinstance(url, str) or not url.startswith('data:') or ',' not in url:
+                raise ValueError('Gemini image input must be a base64 data URL')
+
+            header, encoded = url.split(',', 1)
+            if ';base64' not in header:
+                raise ValueError('Gemini image input must use base64 encoding')
+            mime_type = header[5:].split(';', 1)[0] or 'image/jpeg'
+            parts.append(
+                gemini_types.Part.from_bytes(
+                    data=base64.b64decode(encoded),
+                    mime_type=mime_type,
+                )
+            )
+
+        if not parts:
+            raise ValueError('Gemini message has no usable content parts')
+        return parts
 
 
 class OpenAIProvider(BaseProvider):
@@ -751,8 +804,17 @@ class AIGateway:
 
                     return response
 
-                except AIProviderError:
-                    raise
+                except AIProviderError as exc:
+                    last_error = exc
+                    inst.record_failure()
+                    log.warning(
+                        'gateway_retry',
+                        provider=inst.name.value,
+                        attempt=attempt,
+                        error=str(exc)[:120],
+                    )
+                    if attempt < DEFAULT_MAX_RETRIES:
+                        await asyncio.sleep(1.5 ** attempt)
                 except Exception as exc:
                     last_error = exc
                     inst.record_failure()
@@ -765,7 +827,10 @@ class AIGateway:
                     if attempt < DEFAULT_MAX_RETRIES:
                         await asyncio.sleep(1.5 ** attempt)
 
-            if allow_failover and provider is None:
+            if not allow_failover:
+                break
+
+            if provider is None:
                 log.info('gateway_failover', failed_provider=inst.name.value)
                 await self._bus.publish_sync(
                     EventType.PROVIDER_FAILOVER,
@@ -870,4 +935,3 @@ class AIGateway:
 def _extract_json(text: str) -> Optional[dict[str, Any]]:
     from app.utils.json_utils import extract_json as _shared_extract
     return _shared_extract(text)
-

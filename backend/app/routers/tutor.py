@@ -4,6 +4,7 @@ from io import BytesIO
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
+from app.core.exceptions import AIProviderError
 from app.services import vision_service, tutor_service
 from app.services import groq_client
 from app.database import databases, DATABASE_ID, COLLECTIONS
@@ -29,8 +30,10 @@ async def generate_lesson(
     mode: str = Form('math'),
 ):
     problem = {'type': problem_type, 'content': content}
-    lesson = tutor_service.generate_lesson(problem, level, mode)
-    return lesson
+    try:
+        return await tutor_service.generate_lesson(problem, level, mode)
+    except AIProviderError as exc:
+        raise HTTPException(status_code=503, detail='AI teacher is temporarily unavailable. Please try again shortly.') from exc
 
 
 @router.post('/help')
@@ -49,8 +52,11 @@ async def step_help(
         current_dict = json.loads(current)
     except json.JSONDecodeError:
         current_dict = {}
-    help_text = tutor_service.get_step_help(problem, completed_list, current_dict)
-    return {'help': help_text}
+    try:
+        help_text = await tutor_service.get_step_help(problem, completed_list, current_dict)
+        return {'help': help_text}
+    except AIProviderError as exc:
+        raise HTTPException(status_code=503, detail='AI teacher is temporarily unavailable. Please try again shortly.') from exc
 
 
 @router.post('/doubt')
@@ -65,7 +71,10 @@ async def answer_doubt(
         current_dict = json.loads(current)
     except json.JSONDecodeError:
         current_dict = {}
-    return tutor_service.answer_doubt(content, question, current_dict, level, mode)
+    try:
+        return await tutor_service.answer_doubt(content, question, current_dict, level, mode)
+    except AIProviderError as exc:
+        raise HTTPException(status_code=503, detail='AI teacher is temporarily unavailable. Please try again shortly.') from exc
 
 
 @router.post('/session-pdf')

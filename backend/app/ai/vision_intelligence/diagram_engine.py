@@ -296,7 +296,7 @@ class DiagramEngine:
                         ],
                     },
                 ],
-                provider=provider or LLMProvider.GROQ,
+                provider=provider,
                 expect_json=True,
                 max_tokens=512,
                 temperature=0.3,

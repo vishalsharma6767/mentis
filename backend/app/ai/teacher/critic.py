@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 from app.ai.gateway import AIGateway, LLMProvider
 from app.utils.json_utils import extract_json
+from app.ai.teacher.personality import TeacherPersonality
 from app.ai.teacher.prompts import critic_agent_prompt
 from app.ai.teacher.schemas import CriticFeedback, CriticOutput, QualityScore, TeacherOutput
 from app.core.logger import get_logger
@@ -44,7 +45,7 @@ class CriticAgent:
 
     def __init__(self, gateway: Optional[AIGateway] = None) -> None:
         self._gateway = gateway
-        self._prompt = critic_agent_prompt
+        self._prompt = critic_agent_prompt(TeacherPersonality())
 
     async def review(
         self,

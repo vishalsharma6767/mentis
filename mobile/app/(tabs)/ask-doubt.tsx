@@ -26,6 +26,30 @@ const CameraSection = lazy(() => import('../../src/components/CameraSection').th
 const ARPenCanvas = lazy(() => import('../../src/components/ARPenCanvas').then(m => ({ default: m.ARPenCanvas })));
 const isWeb = Platform.OS === 'web';
 
+async function imageUriToBase64(imageUri: string): Promise<string> {
+  if (imageUri.startsWith('data:')) {
+    return imageUri.split(',', 2)[1] || '';
+  }
+
+  if (!isWeb) {
+    const FileSystem = await import('expo-file-system');
+    return FileSystem.readAsStringAsync(imageUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+  }
+
+  const blob = await fetch(imageUri).then(res => {
+    if (!res.ok) throw new Error('Unable to read the selected image');
+    return res.blob();
+  });
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Unable to encode the selected image'));
+    reader.onload = () => resolve(String(reader.result).split(',', 2)[1] || '');
+    reader.readAsDataURL(blob);
+  });
+}
+
 type SessionPhase =
   | 'idle' | 'capturing' | 'analyzing' | 'building_scene'
   | 'planning' | 'teaching' | 'question' | 'interacting'
@@ -378,10 +402,18 @@ export default function AskDoubtScreen() {
       const wsUrl = `${BASE_URL.replace('http', 'ws')}/api/v1/teach/stream`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
-      ws.onopen = () => {
-        const imageBase64 = imageUri.startsWith('data:') ? imageUri.split(',')[1] : imageUri;
-        ws.send(JSON.stringify({ type: 'doubt_image', image_base64: imageBase64, mode: 'math', level: 'intermediate' }));
-        setWsConnected(true);
+      ws.onopen = async () => {
+        try {
+          const imageBase64 = await imageUriToBase64(imageUri);
+          if (!imageBase64) throw new Error('The selected image is empty');
+          ws.send(JSON.stringify({ type: 'doubt_image', image_base64: imageBase64, mode: 'math', level: 'intermediate' }));
+          setWsConnected(true);
+        } catch {
+          ws.close();
+          setWsConnected(false);
+          setErrorMessage('Image could not be read. Please capture or upload it again.');
+          setSessionPhase('error');
+        }
       };
       ws.onmessage = handleWsMessage;
       ws.onclose = () => setWsConnected(false);
