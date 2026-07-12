@@ -97,13 +97,20 @@ export async function restoreSession(): Promise<UserSession | null> {
   const saved = await getSavedSession();
   if (!saved) return null;
   try {
-    await account.get();
+    await Promise.race([
+      account.get(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 5000)
+      ),
+    ]);
     return saved;
   } catch {
     await clearSession();
     return null;
   }
 }
+
+
 
 export async function logout(): Promise<void> {
   try {
